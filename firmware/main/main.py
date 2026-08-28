@@ -2,6 +2,9 @@ import time
 import network
 import requests
 import ujson
+from machine import Pin
+import onewire
+import ds18x20
 
 from config import (
     API_BASE_URL,
@@ -29,8 +32,12 @@ TELEMETRY_URL = (
     + "/telemetry"
 )
 
-# Temporary value used only to prove the telemetry path end-to-end.
-SIMULATED_POOL_TEMPERATURE_C = 26.5
+# PoolBerry 1-Wire temperature bus.
+# All DS18B20 temperature sensors will eventually share GP18.
+ONEWIRE_GPIO = 18
+
+onewire_bus = onewire.OneWire(Pin(ONEWIRE_GPIO))
+temperature_bus = ds18x20.DS18X20(onewire_bus)
 
 
 def connect_wifi(wlan):
@@ -94,6 +101,37 @@ def post_json(url, payload):
                 pass
 
 
+def read_pool_temperature():
+    roms = temperature_bus.scan()
+
+    if not roms:
+        print("Temperature error: no DS18B20 found on GP18")
+        return None
+
+    # During this first hardware phase the single connected DS18B20 is T2 / pool.
+    # Once all six sensors are installed this will be replaced by fixed ROM mapping.
+    rom = roms[0]
+
+    try:
+        temperature_bus.convert_temp()
+        time.sleep_ms(750)
+        temperature = temperature_bus.read_temp(rom)
+    except Exception as exc:
+        print("Temperature read error:", exc)
+        return None
+
+    # Reject known DS18B20 power-up/error value and impossible readings.
+    if temperature is None or temperature == 85.0:
+        print("Temperature error: invalid reading", temperature)
+        return None
+
+    if temperature < -55.0 or temperature > 125.0:
+        print("Temperature error: out of range", temperature)
+        return None
+
+    return temperature
+
+
 def send_heartbeat(wlan, uptime_seconds):
     if not wlan.isconnected():
         print("Heartbeat skipped: WiFi disconnected")
@@ -118,13 +156,18 @@ def send_telemetry(wlan):
         print("Telemetry skipped: WiFi disconnected")
         return False
 
+    pool_temperature = read_pool_temperature()
+    if pool_temperature is None:
+        print("Telemetry skipped: no valid pool temperature")
+        return False
+
     ok = post_json(
         TELEMETRY_URL,
-        {"pool_temperature_c": SIMULATED_POOL_TEMPERATURE_C},
+        {"pool_temperature_c": pool_temperature},
     )
 
     if ok:
-        print("Telemetry OK:", SIMULATED_POOL_TEMPERATURE_C, "C")
+        print("Telemetry OK:", pool_temperature, "C")
     return ok
 
 
@@ -133,6 +176,7 @@ def main():
     print("PoolBerry Edge Controller")
     print("Device:", DEVICE_ID)
     print("Firmware:", FIRMWARE_VERSION)
+    print("1-Wire temperature bus: GP" + str(ONEWIRE_GPIO))
 
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
