@@ -11,11 +11,25 @@ type DeviceStatus = {
 type Telemetry = {
   device_id: string;
   recorded_at: string;
-  pool_temperature_c: number;
+  temperature_t1_c: number | null;
+  temperature_t2_c: number | null;
+  temperature_t3_c: number | null;
+  temperature_t4_c: number | null;
+  temperature_t5_c: number | null;
+  temperature_t6_c: number | null;
 };
 
 const API_URL = process.env.POOLBERRY_API_INTERNAL_URL ?? "http://api:8000";
 const DEVICE_ID = process.env.POOLBERRY_DEVICE_ID ?? "poolberry-main-001";
+
+const temperatureSensors = [
+  { key: "temperature_t1_c" as const, id: "T1", role: "Buiten" },
+  { key: "temperature_t2_c" as const, id: "T2", role: "Zwembad" },
+  { key: "temperature_t3_c" as const, id: "T3", role: "Warmtepomp" },
+  { key: "temperature_t4_c" as const, id: "T4", role: "Collector" },
+  { key: "temperature_t5_c" as const, id: "T5", role: "Zwembad in" },
+  { key: "temperature_t6_c" as const, id: "T6", role: "Binnen" },
+];
 
 function formatUptime(totalSeconds: number) {
   const days = Math.floor(totalSeconds / 86400);
@@ -44,7 +58,6 @@ async function getDeviceStatus(): Promise<DeviceStatus | null> {
     const response = await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}`, {
       cache: "no-store",
     });
-
     if (!response.ok) return null;
     return response.json();
   } catch {
@@ -58,7 +71,6 @@ async function getLatestTelemetry(): Promise<Telemetry | null> {
       `${API_URL}/internal/v1/devices/${DEVICE_ID}/telemetry/latest`,
       { cache: "no-store" },
     );
-
     if (!response.ok) return null;
     return response.json();
   } catch {
@@ -101,49 +113,64 @@ export default async function Home() {
           <p>De webapp kan momenteel geen actuele status ophalen uit de PoolBerry API.</p>
         </section>
       ) : (
-        <section className="grid">
-          <article className="card primaryCard">
-            <div className="cardLabel">Controller</div>
-            <div className="cardValue">{device.device_id}</div>
-            <div className="cardMeta">Hoofdcontroller</div>
-          </article>
+        <>
+          <section className="grid">
+            <article className="card primaryCard">
+              <div className="cardLabel">Controller</div>
+              <div className="cardValue">{device.device_id}</div>
+              <div className="cardMeta">Hoofdcontroller</div>
+            </article>
 
-          <article className="card">
-            <div className="cardLabel">Zwembadtemperatuur</div>
-            <div className="cardValue">
-              {telemetry ? `${telemetry.pool_temperature_c.toFixed(1)} °C` : "—"}
-            </div>
-            <div className="cardMeta">
+            <article className="card">
+              <div className="cardLabel">Firmware</div>
+              <div className="cardValue">{device.firmware_version}</div>
+              <div className="cardMeta">MicroPython edge firmware</div>
+            </article>
+
+            <article className="card">
+              <div className="cardLabel">Uptime</div>
+              <div className="cardValue">{formatUptime(device.uptime_seconds)}</div>
+              <div className="cardMeta">Sinds laatste herstart</div>
+            </article>
+
+            <article className="card">
+              <div className="cardLabel">WiFi</div>
+              <div className="cardValue">{device.wifi_connected ? "Verbonden" : "Niet verbonden"}</div>
+              <div className="cardMeta">Status volgens laatste heartbeat</div>
+            </article>
+
+            <article className="card wide">
+              <div className="cardLabel">Laatste heartbeat</div>
+              <div className="cardValue compact">{formatDateTime(device.last_seen)}</div>
+              <div className="cardMeta">Automatisch bijgewerkt door de hoofd-Pico</div>
+            </article>
+          </section>
+
+          <section className="panel">
+            <h2>Temperaturen</h2>
+            <p className="cardMeta">
               {telemetry
                 ? `Laatste meting ${formatDateTime(telemetry.recorded_at)}`
-                : "Nog geen telemetry ontvangen"}
+                : "Nog geen temperatuurtelemetrie ontvangen"}
+            </p>
+            <div className="grid">
+              {temperatureSensors.map((sensor) => {
+                const value = telemetry?.[sensor.key] ?? null;
+                return (
+                  <article className="card" key={sensor.id}>
+                    <div className="cardLabel">{sensor.id} · {sensor.role}</div>
+                    <div className="cardValue">
+                      {value === null ? "—" : `${value.toFixed(1)} °C`}
+                    </div>
+                    <div className="cardMeta">
+                      {value === null ? "Sensor niet aanwezig / geen geldige meting" : "Actuele 1-Wire meting"}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-          </article>
-
-          <article className="card">
-            <div className="cardLabel">Firmware</div>
-            <div className="cardValue">{device.firmware_version}</div>
-            <div className="cardMeta">MicroPython edge firmware</div>
-          </article>
-
-          <article className="card">
-            <div className="cardLabel">Uptime</div>
-            <div className="cardValue">{formatUptime(device.uptime_seconds)}</div>
-            <div className="cardMeta">Sinds laatste herstart</div>
-          </article>
-
-          <article className="card">
-            <div className="cardLabel">WiFi</div>
-            <div className="cardValue">{device.wifi_connected ? "Verbonden" : "Niet verbonden"}</div>
-            <div className="cardMeta">Status volgens laatste heartbeat</div>
-          </article>
-
-          <article className="card wide">
-            <div className="cardLabel">Laatste heartbeat</div>
-            <div className="cardValue compact">{formatDateTime(device.last_seen)}</div>
-            <div className="cardMeta">Automatisch bijgewerkt door de hoofd-Pico</div>
-          </article>
-        </section>
+          </section>
+        </>
       )}
     </main>
   );
