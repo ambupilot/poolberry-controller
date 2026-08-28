@@ -8,6 +8,12 @@ type DeviceStatus = {
   status: "online" | "offline";
 };
 
+type Telemetry = {
+  device_id: string;
+  recorded_at: string;
+  pool_temperature_c: number;
+};
+
 const API_URL = process.env.POOLBERRY_API_INTERNAL_URL ?? "http://api:8000";
 const DEVICE_ID = process.env.POOLBERRY_DEVICE_ID ?? "poolberry-main-001";
 
@@ -25,6 +31,14 @@ function formatUptime(totalSeconds: number) {
   return parts.join(" ");
 }
 
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("nl-NL", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+    timeZone: "Europe/Amsterdam",
+  }).format(new Date(value));
+}
+
 async function getDeviceStatus(): Promise<DeviceStatus | null> {
   try {
     const response = await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}`, {
@@ -38,8 +52,25 @@ async function getDeviceStatus(): Promise<DeviceStatus | null> {
   }
 }
 
+async function getLatestTelemetry(): Promise<Telemetry | null> {
+  try {
+    const response = await fetch(
+      `${API_URL}/internal/v1/devices/${DEVICE_ID}/telemetry/latest`,
+      { cache: "no-store" },
+    );
+
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
 export default async function Home() {
-  const device = await getDeviceStatus();
+  const [device, telemetry] = await Promise.all([
+    getDeviceStatus(),
+    getLatestTelemetry(),
+  ]);
 
   return (
     <main className="shell">
@@ -78,6 +109,18 @@ export default async function Home() {
           </article>
 
           <article className="card">
+            <div className="cardLabel">Zwembadtemperatuur</div>
+            <div className="cardValue">
+              {telemetry ? `${telemetry.pool_temperature_c.toFixed(1)} °C` : "—"}
+            </div>
+            <div className="cardMeta">
+              {telemetry
+                ? `Laatste meting ${formatDateTime(telemetry.recorded_at)}`
+                : "Nog geen telemetry ontvangen"}
+            </div>
+          </article>
+
+          <article className="card">
             <div className="cardLabel">Firmware</div>
             <div className="cardValue">{device.firmware_version}</div>
             <div className="cardMeta">MicroPython edge firmware</div>
@@ -97,13 +140,7 @@ export default async function Home() {
 
           <article className="card wide">
             <div className="cardLabel">Laatste heartbeat</div>
-            <div className="cardValue compact">
-              {new Intl.DateTimeFormat("nl-NL", {
-                dateStyle: "medium",
-                timeStyle: "medium",
-                timeZone: "Europe/Amsterdam",
-              }).format(new Date(device.last_seen))}
-            </div>
+            <div className="cardValue compact">{formatDateTime(device.last_seen)}</div>
             <div className="cardMeta">Automatisch bijgewerkt door de hoofd-Pico</div>
           </article>
         </section>
