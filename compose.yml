@@ -1,4 +1,40 @@
-# PoolBerry deployment composition.
-# Services will be added incrementally as the API, web application,
-# and database deployment are implemented.
-services: {}
+services:
+  db:
+    image: postgres:18.4-bookworm
+    container_name: poolberry-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ../data/postgres:/var/lib/postgresql
+      - ./database/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - poolberry-internal
+
+  api:
+    build:
+      context: ./api
+    container_name: poolberry-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      POOLBERRY_DEVICE_ID: ${POOLBERRY_DEVICE_ID}
+      POOLBERRY_DEVICE_TOKEN_SHA256: ${POOLBERRY_DEVICE_TOKEN_SHA256}
+    ports:
+      - "127.0.0.1:8002:8000"
+    networks:
+      - poolberry-internal
+
+networks:
+  poolberry-internal:
+    driver: bridge
