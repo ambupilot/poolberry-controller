@@ -4,13 +4,20 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Device
-from .schemas import DeviceStatusResponse, HeartbeatRequest, HeartbeatResponse
+from .models import Device, Telemetry
+from .schemas import (
+    DeviceStatusResponse,
+    HeartbeatRequest,
+    HeartbeatResponse,
+    TelemetryRequest,
+    TelemetryResponse,
+)
 
-app = FastAPI(title="PoolBerry API", version="0.2.0")
+app = FastAPI(title="PoolBerry API", version="0.3.0")
 
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
@@ -71,6 +78,27 @@ def get_device_status(device_id: str, db: Session = Depends(get_db)):
     )
 
 
+@app.get(
+    "/internal/v1/devices/{device_id}/telemetry/latest",
+    response_model=TelemetryResponse,
+)
+def get_latest_telemetry(device_id: str, db: Session = Depends(get_db)):
+    telemetry = db.scalar(
+        select(Telemetry)
+        .where(Telemetry.device_id == device_id)
+        .order_by(Telemetry.recorded_at.desc())
+        .limit(1)
+    )
+    if telemetry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Telemetry not found")
+
+    return TelemetryResponse(
+        device_id=telemetry.device_id,
+        recorded_at=telemetry.recorded_at,
+        pool_temperature_c=telemetry.pool_temperature_c,
+    )
+
+
 @app.post(
     "/api/v1/devices/{device_id}/heartbeat",
     response_model=HeartbeatResponse,
@@ -111,4 +139,34 @@ def heartbeat(
         uptime_seconds=device.uptime_seconds,
         wifi_connected=device.wifi_connected,
         status="online",
+    )
+
+
+@app.post(
+    "/api/v1/devices/{device_id}/telemetry",
+    response_model=TelemetryResponse,
+)
+def post_telemetry(
+    device_id: str,
+    payload: TelemetryRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    authorize_device(device_id, authorization)
+
+    if db.get(Device, device_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    telemetry = Telemetry(
+        device_id=device_id,
+        pool_temperature_c=payload.pool_temperature_c,
+    )
+    db.add(telemetry)
+    db.commit()
+    db.refresh(telemetry)
+
+    return TelemetryResponse(
+        device_id=telemetry.device_id,
+        recorded_at=telemetry.recorded_at,
+        pool_temperature_c=telemetry.pool_temperature_c,
     )
