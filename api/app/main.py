@@ -17,7 +17,7 @@ from .schemas import (
     TelemetryResponse,
 )
 
-app = FastAPI(title="PoolBerry API", version="0.3.0")
+app = FastAPI(title="PoolBerry API", version="0.4.0")
 
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
@@ -51,6 +51,19 @@ def device_status(device: Device) -> str:
 
     age_seconds = (now - last_seen).total_seconds()
     return "online" if age_seconds <= DEVICE_OFFLINE_AFTER_SECONDS else "offline"
+
+
+def telemetry_response(telemetry: Telemetry) -> TelemetryResponse:
+    return TelemetryResponse(
+        device_id=telemetry.device_id,
+        recorded_at=telemetry.recorded_at,
+        temperature_t1_c=telemetry.temperature_t1_c,
+        temperature_t2_c=telemetry.temperature_t2_c,
+        temperature_t3_c=telemetry.temperature_t3_c,
+        temperature_t4_c=telemetry.temperature_t4_c,
+        temperature_t5_c=telemetry.temperature_t5_c,
+        temperature_t6_c=telemetry.temperature_t6_c,
+    )
 
 
 @app.get("/health")
@@ -92,11 +105,7 @@ def get_latest_telemetry(device_id: str, db: Session = Depends(get_db)):
     if telemetry is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Telemetry not found")
 
-    return TelemetryResponse(
-        device_id=telemetry.device_id,
-        recorded_at=telemetry.recorded_at,
-        pool_temperature_c=telemetry.pool_temperature_c,
-    )
+    return telemetry_response(telemetry)
 
 
 @app.post(
@@ -157,16 +166,19 @@ def post_telemetry(
     if db.get(Device, device_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
+    values = payload.model_dump()
+    if not any(value is not None for value in values.values()):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Telemetry contains no temperature values",
+        )
+
     telemetry = Telemetry(
         device_id=device_id,
-        pool_temperature_c=payload.pool_temperature_c,
+        **values,
     )
     db.add(telemetry)
     db.commit()
     db.refresh(telemetry)
 
-    return TelemetryResponse(
-        device_id=telemetry.device_id,
-        recorded_at=telemetry.recorded_at,
-        pool_temperature_c=telemetry.pool_temperature_c,
-    )
+    return telemetry_response(telemetry)
