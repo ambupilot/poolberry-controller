@@ -21,6 +21,19 @@ class Device(Base):
     wifi_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
+class DeviceConfig(Base):
+    __tablename__ = "device_config"
+
+    device_id: Mapped[str] = mapped_column(
+        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True
+    )
+    flow_f1_pulses_per_liter: Mapped[float] = mapped_column(Float, nullable=False, default=420.0)
+    flow_f2_pulses_per_liter: Mapped[float] = mapped_column(Float, nullable=False, default=420.0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Telemetry(Base):
     __tablename__ = "telemetry"
 
@@ -32,12 +45,12 @@ class Telemetry(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    # Legacy field retained while the prototype database is migrated.
     pool_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
-
     temperature_t1_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     temperature_t2_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     temperature_t3_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     temperature_t4_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     temperature_t5_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     temperature_t6_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    flow_f1_lph: Mapped[float | None] = mapped_column(Float, nullable=True)
+    flow_f2_lph: Mapped[float | None] = mapped_column(Float, nullable=True)
