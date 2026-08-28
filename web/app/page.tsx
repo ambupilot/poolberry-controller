@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 type DeviceStatus = {
   device_id: string;
   firmware_version: string;
@@ -17,6 +19,8 @@ type Telemetry = {
   temperature_t4_c: number | null;
   temperature_t5_c: number | null;
   temperature_t6_c: number | null;
+  flow_f1_lph: number | null;
+  flow_f2_lph: number | null;
 };
 
 const API_URL = process.env.POOLBERRY_API_INTERNAL_URL ?? "http://api:8000";
@@ -36,7 +40,6 @@ function formatUptime(totalSeconds: number) {
   const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-
   const parts = [];
   if (days) parts.push(`${days}d`);
   if (hours || days) parts.push(`${hours}u`);
@@ -55,52 +58,36 @@ function formatDateTime(value: string) {
 
 async function getDeviceStatus(): Promise<DeviceStatus | null> {
   try {
-    const response = await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}`, {
-      cache: "no-store",
-    });
+    const response = await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}`, { cache: "no-store" });
     if (!response.ok) return null;
     return response.json();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function getLatestTelemetry(): Promise<Telemetry | null> {
   try {
-    const response = await fetch(
-      `${API_URL}/internal/v1/devices/${DEVICE_ID}/telemetry/latest`,
-      { cache: "no-store" },
-    );
+    const response = await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}/telemetry/latest`, { cache: "no-store" });
     if (!response.ok) return null;
     return response.json();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export default async function Home() {
-  const [device, telemetry] = await Promise.all([
-    getDeviceStatus(),
-    getLatestTelemetry(),
-  ]);
+  const [device, telemetry] = await Promise.all([getDeviceStatus(), getLatestTelemetry()]);
 
   return (
     <main className="shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">PoolBerry Control</p>
-          <h1>Dashboard</h1>
-        </div>
+        <div><p className="eyebrow">PoolBerry Control</p><h1>Dashboard</h1></div>
         <div className={`statusBadge ${device?.status === "online" ? "online" : "offline"}`}>
-          <span className="statusDot" />
-          {device?.status === "online" ? "Online" : "Offline"}
+          <span className="statusDot" />{device?.status === "online" ? "Online" : "Offline"}
         </div>
       </header>
 
       <nav className="tabs" aria-label="PoolBerry secties">
-        <span className="tab active">Dashboard</span>
-        <span className="tab disabled">Configuratie</span>
-        <span className="tab disabled">Programma's</span>
+        <Link className="tab active" href="/">Dashboard</Link>
+        <Link className="tab" href="/configuration">Configuratie</Link>
+        <span className="tab disabled">Programma&apos;s</span>
         <span className="tab disabled">Hardware</span>
         <span className="tab disabled">Historie</span>
         <span className="tab disabled">Events</span>
@@ -108,66 +95,33 @@ export default async function Home() {
       </nav>
 
       {!device ? (
-        <section className="panel warning">
-          <h2>Controllerstatus niet beschikbaar</h2>
-          <p>De webapp kan momenteel geen actuele status ophalen uit de PoolBerry API.</p>
-        </section>
+        <section className="panel warning"><h2>Controllerstatus niet beschikbaar</h2><p>De webapp kan momenteel geen actuele status ophalen uit de PoolBerry API.</p></section>
       ) : (
         <>
           <section className="grid">
-            <article className="card primaryCard">
-              <div className="cardLabel">Controller</div>
-              <div className="cardValue">{device.device_id}</div>
-              <div className="cardMeta">Hoofdcontroller</div>
-            </article>
-
-            <article className="card">
-              <div className="cardLabel">Firmware</div>
-              <div className="cardValue">{device.firmware_version}</div>
-              <div className="cardMeta">MicroPython edge firmware</div>
-            </article>
-
-            <article className="card">
-              <div className="cardLabel">Uptime</div>
-              <div className="cardValue">{formatUptime(device.uptime_seconds)}</div>
-              <div className="cardMeta">Sinds laatste herstart</div>
-            </article>
-
-            <article className="card">
-              <div className="cardLabel">WiFi</div>
-              <div className="cardValue">{device.wifi_connected ? "Verbonden" : "Niet verbonden"}</div>
-              <div className="cardMeta">Status volgens laatste heartbeat</div>
-            </article>
-
-            <article className="card wide">
-              <div className="cardLabel">Laatste heartbeat</div>
-              <div className="cardValue compact">{formatDateTime(device.last_seen)}</div>
-              <div className="cardMeta">Automatisch bijgewerkt door de hoofd-Pico</div>
-            </article>
+            <article className="card primaryCard"><div className="cardLabel">Controller</div><div className="cardValue">{device.device_id}</div><div className="cardMeta">Hoofdcontroller</div></article>
+            <article className="card"><div className="cardLabel">Firmware</div><div className="cardValue">{device.firmware_version}</div><div className="cardMeta">MicroPython edge firmware</div></article>
+            <article className="card"><div className="cardLabel">Uptime</div><div className="cardValue">{formatUptime(device.uptime_seconds)}</div><div className="cardMeta">Sinds laatste herstart</div></article>
+            <article className="card"><div className="cardLabel">WiFi</div><div className="cardValue">{device.wifi_connected ? "Verbonden" : "Niet verbonden"}</div><div className="cardMeta">Status volgens laatste heartbeat</div></article>
+            <article className="card wide"><div className="cardLabel">Laatste heartbeat</div><div className="cardValue compact">{formatDateTime(device.last_seen)}</div><div className="cardMeta">Automatisch bijgewerkt door de hoofd-Pico</div></article>
           </section>
 
           <section className="panel">
             <h2>Temperaturen</h2>
-            <p className="cardMeta">
-              {telemetry
-                ? `Laatste meting ${formatDateTime(telemetry.recorded_at)}`
-                : "Nog geen temperatuurtelemetrie ontvangen"}
-            </p>
+            <p className="cardMeta">{telemetry ? `Laatste meting ${formatDateTime(telemetry.recorded_at)}` : "Nog geen temperatuurtelemetrie ontvangen"}</p>
             <div className="grid">
               {temperatureSensors.map((sensor) => {
                 const value = telemetry?.[sensor.key] ?? null;
-                return (
-                  <article className="card" key={sensor.id}>
-                    <div className="cardLabel">{sensor.id} · {sensor.role}</div>
-                    <div className="cardValue">
-                      {value === null ? "—" : `${value.toFixed(1)} °C`}
-                    </div>
-                    <div className="cardMeta">
-                      {value === null ? "Sensor niet aanwezig / geen geldige meting" : "Actuele 1-Wire meting"}
-                    </div>
-                  </article>
-                );
+                return <article className="card" key={sensor.id}><div className="cardLabel">{sensor.id} · {sensor.role}</div><div className="cardValue">{value === null ? "—" : `${value.toFixed(1)} °C`}</div><div className="cardMeta">{value === null ? "Sensor niet aanwezig / geen geldige meting" : "Actuele 1-Wire meting"}</div></article>;
               })}
+            </div>
+          </section>
+
+          <section className="panel">
+            <h2>Flow</h2>
+            <div className="grid">
+              <article className="card"><div className="cardLabel">F1 · Flowmeter</div><div className="cardValue">{telemetry?.flow_f1_lph == null ? "—" : `${telemetry.flow_f1_lph.toFixed(0)} L/h`}</div><div className="cardMeta">GP17 · gekalibreerd via configuratie</div></article>
+              <article className="card"><div className="cardLabel">F2 · Flowmeter</div><div className="cardValue">{telemetry?.flow_f2_lph == null ? "—" : `${telemetry.flow_f2_lph.toFixed(0)} L/h`}</div><div className="cardMeta">GP27 · gekalibreerd via configuratie</div></article>
             </div>
           </section>
         </>
