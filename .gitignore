@@ -35,3 +35,5 @@ backups/
 # IDE
 .vscode/
 .idea/
+.micropico
+2027PoolController.code-workspace
