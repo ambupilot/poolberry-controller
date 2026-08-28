@@ -1,0 +1,36 @@
+# Python / MicroPython
+__pycache__/
+*.pyc
+
+# Local Pico configuration / secrets
+firmware/main/config.py
+firmware/panel/config.py
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Python virtual environments
+.venv/
+venv/
+
+# Database / runtime data
+postgres/
+data/
+backups/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
