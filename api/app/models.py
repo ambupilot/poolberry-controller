@@ -31,4 +31,13 @@ class Telemetry(Base):
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    pool_temperature_c: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Legacy field retained while the prototype database is migrated.
+    pool_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    temperature_t1_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temperature_t2_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temperature_t3_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temperature_t4_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temperature_t5_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temperature_t6_c: Mapped[float | None] = mapped_column(Float, nullable=True)
