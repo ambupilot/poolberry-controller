@@ -28,3 +28,13 @@ class DeviceStatusResponse(BaseModel):
     uptime_seconds: int
     wifi_connected: bool
     status: str
+
+
+class TelemetryRequest(BaseModel):
+    pool_temperature_c: float = Field(ge=-20, le=80)
+
+
+class TelemetryResponse(BaseModel):
+    device_id: str
+    recorded_at: datetime
+    pool_temperature_c: float
