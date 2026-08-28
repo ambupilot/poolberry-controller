@@ -9,6 +9,7 @@ from config import (
     DEVICE_TOKEN,
     FIRMWARE_VERSION,
     HEARTBEAT_INTERVAL_SECONDS,
+    TELEMETRY_INTERVAL_SECONDS,
     WIFI_CONNECT_TIMEOUT_SECONDS,
     WIFI_PASSWORD,
     WIFI_SSID,
@@ -21,6 +22,15 @@ HEARTBEAT_URL = (
     + DEVICE_ID
     + "/heartbeat"
 )
+TELEMETRY_URL = (
+    API_BASE_URL.rstrip("/")
+    + "/api/v1/devices/"
+    + DEVICE_ID
+    + "/telemetry"
+)
+
+# Temporary value used only to prove the telemetry path end-to-end.
+SIMULATED_POOL_TEMPERATURE_C = 26.5
 
 
 def connect_wifi(wlan):
@@ -50,53 +60,72 @@ def connect_wifi(wlan):
     return False
 
 
-def send_heartbeat(wlan, uptime_seconds):
-    if not wlan.isconnected():
-        print("Heartbeat skipped: WiFi disconnected")
-        return False
-
-    payload = {
-        "firmware_version": FIRMWARE_VERSION,
-        "uptime": uptime_seconds,
-        "wifi_connected": True,
-    }
-
+def post_json(url, payload):
     headers = {
         "Authorization": "Bearer " + DEVICE_TOKEN,
         "Content-Type": "application/json",
     }
 
     response = None
-
     try:
         response = requests.post(
-            HEARTBEAT_URL,
+            url,
             data=ujson.dumps(payload),
             headers=headers,
             timeout=10,
         )
-
         if response.status_code == 200:
-            print("Heartbeat OK:", uptime_seconds, "s")
             return True
 
-        print("Heartbeat failed: HTTP", response.status_code)
+        print("POST failed: HTTP", response.status_code)
         try:
             print(response.text)
         except Exception:
             pass
         return False
-
     except Exception as exc:
-        print("Heartbeat error:", exc)
+        print("POST error:", exc)
         return False
-
     finally:
         if response is not None:
             try:
                 response.close()
             except Exception:
                 pass
+
+
+def send_heartbeat(wlan, uptime_seconds):
+    if not wlan.isconnected():
+        print("Heartbeat skipped: WiFi disconnected")
+        return False
+
+    ok = post_json(
+        HEARTBEAT_URL,
+        {
+            "firmware_version": FIRMWARE_VERSION,
+            "uptime": uptime_seconds,
+            "wifi_connected": True,
+        },
+    )
+
+    if ok:
+        print("Heartbeat OK:", uptime_seconds, "s")
+    return ok
+
+
+def send_telemetry(wlan):
+    if not wlan.isconnected():
+        print("Telemetry skipped: WiFi disconnected")
+        return False
+
+    ok = post_json(
+        TELEMETRY_URL,
+        {"pool_temperature_c": SIMULATED_POOL_TEMPERATURE_C},
+    )
+
+    if ok:
+        print("Telemetry OK:", SIMULATED_POOL_TEMPERATURE_C, "C")
+    return ok
 
 
 def main():
@@ -109,16 +138,33 @@ def main():
     wlan.active(True)
 
     start = time.ticks_ms()
+    last_heartbeat_ms = None
+    last_telemetry_ms = None
 
     while True:
         if not wlan.isconnected():
             connect_wifi(wlan)
 
-        uptime = time.ticks_diff(time.ticks_ms(), start) // 1000
+        now_ms = time.ticks_ms()
+        uptime = time.ticks_diff(now_ms, start) // 1000
 
-        send_heartbeat(wlan, uptime)
+        if (
+            last_heartbeat_ms is None
+            or time.ticks_diff(now_ms, last_heartbeat_ms)
+            >= HEARTBEAT_INTERVAL_SECONDS * 1000
+        ):
+            send_heartbeat(wlan, uptime)
+            last_heartbeat_ms = now_ms
 
-        time.sleep(HEARTBEAT_INTERVAL_SECONDS)
+        if (
+            last_telemetry_ms is None
+            or time.ticks_diff(now_ms, last_telemetry_ms)
+            >= TELEMETRY_INTERVAL_SECONDS * 1000
+        ):
+            send_telemetry(wlan)
+            last_telemetry_ms = now_ms
+
+        time.sleep(1)
 
 
 main()
