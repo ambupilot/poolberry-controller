@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -19,3 +19,16 @@ class Device(Base):
     )
     uptime_seconds: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     wifi_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class Telemetry(Base):
+    __tablename__ = "telemetry"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(
+        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    pool_temperature_c: Mapped[float] = mapped_column(Float, nullable=False)
