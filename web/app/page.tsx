@@ -1,0 +1,113 @@
+type DeviceStatus = {
+  device_id: string;
+  firmware_version: string;
+  first_seen: string;
+  last_seen: string;
+  uptime_seconds: number;
+  wifi_connected: boolean;
+  status: "online" | "offline";
+};
+
+const API_URL = process.env.POOLBERRY_API_INTERNAL_URL ?? "http://api:8000";
+const DEVICE_ID = process.env.POOLBERRY_DEVICE_ID ?? "poolberry-main-001";
+
+function formatUptime(totalSeconds: number) {
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours || days) parts.push(`${hours}u`);
+  if (minutes || hours || days) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+  return parts.join(" ");
+}
+
+async function getDeviceStatus(): Promise<DeviceStatus | null> {
+  try {
+    const response = await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
+export default async function Home() {
+  const device = await getDeviceStatus();
+
+  return (
+    <main className="shell">
+      <header className="topbar">
+        <div>
+          <p className="eyebrow">PoolBerry Control</p>
+          <h1>Dashboard</h1>
+        </div>
+        <div className={`statusBadge ${device?.status === "online" ? "online" : "offline"}`}>
+          <span className="statusDot" />
+          {device?.status === "online" ? "Online" : "Offline"}
+        </div>
+      </header>
+
+      <nav className="tabs" aria-label="PoolBerry secties">
+        <span className="tab active">Dashboard</span>
+        <span className="tab disabled">Configuratie</span>
+        <span className="tab disabled">Programma's</span>
+        <span className="tab disabled">Hardware</span>
+        <span className="tab disabled">Historie</span>
+        <span className="tab disabled">Events</span>
+        <span className="tab disabled">Systeem</span>
+      </nav>
+
+      {!device ? (
+        <section className="panel warning">
+          <h2>Controllerstatus niet beschikbaar</h2>
+          <p>De webapp kan momenteel geen actuele status ophalen uit de PoolBerry API.</p>
+        </section>
+      ) : (
+        <section className="grid">
+          <article className="card primaryCard">
+            <div className="cardLabel">Controller</div>
+            <div className="cardValue">{device.device_id}</div>
+            <div className="cardMeta">Hoofdcontroller</div>
+          </article>
+
+          <article className="card">
+            <div className="cardLabel">Firmware</div>
+            <div className="cardValue">{device.firmware_version}</div>
+            <div className="cardMeta">MicroPython edge firmware</div>
+          </article>
+
+          <article className="card">
+            <div className="cardLabel">Uptime</div>
+            <div className="cardValue">{formatUptime(device.uptime_seconds)}</div>
+            <div className="cardMeta">Sinds laatste herstart</div>
+          </article>
+
+          <article className="card">
+            <div className="cardLabel">WiFi</div>
+            <div className="cardValue">{device.wifi_connected ? "Verbonden" : "Niet verbonden"}</div>
+            <div className="cardMeta">Status volgens laatste heartbeat</div>
+          </article>
+
+          <article className="card wide">
+            <div className="cardLabel">Laatste heartbeat</div>
+            <div className="cardValue compact">
+              {new Intl.DateTimeFormat("nl-NL", {
+                dateStyle: "medium",
+                timeStyle: "medium",
+                timeZone: "Europe/Amsterdam",
+              }).format(new Date(device.last_seen))}
+            </div>
+            <div className="cardMeta">Automatisch bijgewerkt door de hoofd-Pico</div>
+          </article>
+        </section>
+      )}
+    </main>
+  );
+}
