@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class HeartbeatRequest(BaseModel):
@@ -10,8 +10,6 @@ class HeartbeatRequest(BaseModel):
 
 
 class HeartbeatResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     device_id: str
     firmware_version: str
     last_seen: datetime
@@ -31,10 +29,20 @@ class DeviceStatusResponse(BaseModel):
 
 
 class TelemetryRequest(BaseModel):
-    pool_temperature_c: float = Field(ge=-20, le=80)
+    temperature_t1_c: float | None = Field(default=None, ge=-55, le=125)
+    temperature_t2_c: float | None = Field(default=None, ge=-55, le=125)
+    temperature_t3_c: float | None = Field(default=None, ge=-55, le=125)
+    temperature_t4_c: float | None = Field(default=None, ge=-55, le=125)
+    temperature_t5_c: float | None = Field(default=None, ge=-55, le=125)
+    temperature_t6_c: float | None = Field(default=None, ge=-55, le=125)
 
 
 class TelemetryResponse(BaseModel):
     device_id: str
     recorded_at: datetime
-    pool_temperature_c: float
+    temperature_t1_c: float | None = None
+    temperature_t2_c: float | None = None
+    temperature_t3_c: float | None = None
+    temperature_t4_c: float | None = None
+    temperature_t5_c: float | None = None
+    temperature_t6_c: float | None = None
