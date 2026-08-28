@@ -18,3 +18,13 @@ class HeartbeatResponse(BaseModel):
     uptime_seconds: int
     wifi_connected: bool
     status: str = "online"
+
+
+class DeviceStatusResponse(BaseModel):
+    device_id: str
+    firmware_version: str
+    first_seen: datetime
+    last_seen: datetime
+    uptime_seconds: int
+    wifi_connected: bool
+    status: str
