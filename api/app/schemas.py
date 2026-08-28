@@ -28,6 +28,18 @@ class DeviceStatusResponse(BaseModel):
     status: str
 
 
+class DeviceConfigResponse(BaseModel):
+    device_id: str
+    flow_f1_pulses_per_liter: float
+    flow_f2_pulses_per_liter: float
+    updated_at: datetime
+
+
+class DeviceConfigUpdate(BaseModel):
+    flow_f1_pulses_per_liter: float = Field(gt=0, le=100000)
+    flow_f2_pulses_per_liter: float = Field(gt=0, le=100000)
+
+
 class TelemetryRequest(BaseModel):
     temperature_t1_c: float | None = Field(default=None, ge=-55, le=125)
     temperature_t2_c: float | None = Field(default=None, ge=-55, le=125)
@@ -35,6 +47,8 @@ class TelemetryRequest(BaseModel):
     temperature_t4_c: float | None = Field(default=None, ge=-55, le=125)
     temperature_t5_c: float | None = Field(default=None, ge=-55, le=125)
     temperature_t6_c: float | None = Field(default=None, ge=-55, le=125)
+    flow_f1_lph: float | None = Field(default=None, ge=0)
+    flow_f2_lph: float | None = Field(default=None, ge=0)
 
 
 class TelemetryResponse(BaseModel):
@@ -46,3 +60,5 @@ class TelemetryResponse(BaseModel):
     temperature_t4_c: float | None = None
     temperature_t5_c: float | None = None
     temperature_t6_c: float | None = None
+    flow_f1_lph: float | None = None
+    flow_f2_lph: float | None = None
