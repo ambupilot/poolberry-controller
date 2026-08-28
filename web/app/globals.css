@@ -15,6 +15,8 @@ body {
     linear-gradient(180deg, #0b1118 0%, #090d12 100%);
 }
 
+a { color: inherit; text-decoration: none; }
+
 .shell {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
@@ -37,11 +39,7 @@ body {
   text-transform: uppercase;
 }
 
-h1 {
-  margin: 0;
-  font-size: clamp(2rem, 4vw, 3.3rem);
-  letter-spacing: -0.04em;
-}
+h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.3rem); letter-spacing: -0.04em; }
 
 .statusBadge {
   display: inline-flex;
@@ -54,13 +52,7 @@ h1 {
   font-weight: 700;
 }
 
-.statusDot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #7c8790;
-}
-
+.statusDot { width: 9px; height: 9px; border-radius: 50%; background: #7c8790; }
 .statusBadge.online .statusDot { background: #54c98b; box-shadow: 0 0 0 5px rgba(84, 201, 139, 0.12); }
 .statusBadge.offline .statusDot { background: #df6c6c; box-shadow: 0 0 0 5px rgba(223, 108, 108, 0.12); }
 
@@ -81,12 +73,7 @@ h1 {
   border: 1px solid transparent;
 }
 
-.tab.active {
-  color: #f3f8fb;
-  background: #15212b;
-  border-color: #263846;
-}
-
+.tab.active { color: #f3f8fb; background: #15212b; border-color: #263846; }
 .tab.disabled { opacity: 0.58; }
 
 .grid {
@@ -115,20 +102,45 @@ h1 {
   text-transform: uppercase;
 }
 
-.cardValue {
-  margin-top: 17px;
-  font-size: 1.45rem;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-}
-
+.cardValue { margin-top: 17px; font-size: 1.45rem; font-weight: 750; letter-spacing: -0.02em; }
 .cardValue.compact { font-size: 1.15rem; }
 .cardMeta { margin-top: 8px; color: #778c9c; font-size: 0.85rem; }
 
-.panel { padding: 28px; }
+.panel { padding: 28px; margin-top: 20px; }
 .panel h2 { margin-top: 0; }
 .panel p { margin-bottom: 0; color: #91a5b4; }
 .warning { border-color: #684a2f; }
+
+.configForm {
+  display: grid;
+  gap: 20px;
+  max-width: 620px;
+  margin-top: 28px;
+}
+
+.field { display: grid; gap: 8px; color: #dce8ef; font-weight: 650; }
+.field small { color: #778c9c; font-weight: 400; }
+.field input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #304251;
+  border-radius: 9px;
+  background: #0d151c;
+  color: #eef4f8;
+  font: inherit;
+}
+
+.primaryButton {
+  width: fit-content;
+  padding: 11px 16px;
+  border: 1px solid #3a6278;
+  border-radius: 9px;
+  background: #183346;
+  color: #f1f7fb;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 @media (max-width: 900px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
