@@ -1,0 +1,4 @@
+# PoolBerry deployment composition.
+# Services will be added incrementally as the API, web application,
+# and database deployment are implemented.
+services: {}
