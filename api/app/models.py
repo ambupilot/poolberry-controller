@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -23,6 +23,9 @@ class DeviceConfig(Base):
     device_id: Mapped[str] = mapped_column(String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True)
     flow_f1_pulses_per_liter: Mapped[float] = mapped_column(Float, nullable=False, default=420.0)
     flow_f2_pulses_per_liter: Mapped[float] = mapped_column(Float, nullable=False, default=420.0)
+    filter_flow_safety_bypass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    filter_min_flow_lph: Mapped[float] = mapped_column(Float, nullable=False, default=500.0)
+    filter_flow_grace_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -62,7 +65,7 @@ class OutputCommand(Base):
     __tablename__ = "output_commands"
 
     device_id: Mapped[str] = mapped_column(String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True)
-    output_id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    output_id: Mapped[str] = mapped_column(String(30), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
