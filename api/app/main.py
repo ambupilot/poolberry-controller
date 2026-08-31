@@ -17,12 +17,12 @@ from .schemas import (
     TelemetryRequest, TelemetryResponse,
 )
 
-app = FastAPI(title="PoolBerry API", version="0.12.0")
+app = FastAPI(title="PoolBerry API", version="0.13.0")
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
 DEVICE_OFFLINE_AFTER_SECONDS = int(os.environ.get("DEVICE_OFFLINE_AFTER_SECONDS", "30"))
 SUPPORTED_OUTPUTS = {f"R{index}" for index in range(1, 9)}
-SUPPORTED_COMMANDS = SUPPORTED_OUTPUTS | {"STOP", "FILTERPUMP_ON", "FILTERPUMP_OFF", "HEATPUMP_ON", "HEATPUMP_OFF"}
+SUPPORTED_COMMANDS = SUPPORTED_OUTPUTS | {"STOP", "FILTERPUMP_ON", "FILTERPUMP_OFF", "HEATPUMP_ON", "HEATPUMP_OFF", "COLLECTOR_OPEN", "COLLECTOR_CLOSE"}
 
 
 def authorize_device(device_id: str, authorization: str | None) -> None:
@@ -107,6 +107,16 @@ def require_normal(db: Session, device_id: str, label: str) -> None:
     if get_or_create_mode(db, device_id).mode != "NORMAL": raise HTTPException(status_code=409, detail=label + " is alleen toegestaan in NORMAL mode")
 
 
+def require_operational_flow(db: Session, device_id: str, label: str) -> DeviceConfig:
+    config = get_or_create_config(db, device_id)
+    if config.filter_flow_safety_bypass: return config
+    telemetry = db.scalar(select(Telemetry).where(Telemetry.device_id == device_id).order_by(Telemetry.recorded_at.desc()).limit(1))
+    if telemetry is None: raise HTTPException(status_code=409, detail=label + " geblokkeerd: geen flowmeting beschikbaar")
+    total_flow = (telemetry.flow_f1_lph or 0.0) + (telemetry.flow_f2_lph or 0.0)
+    if total_flow < config.filter_min_flow_lph: raise HTTPException(status_code=409, detail=f"{label} geblokkeerd: totale flow {total_flow:.0f} L/h is lager dan {config.filter_min_flow_lph:.0f} L/h")
+    return config
+
+
 @app.get("/health")
 def health(): return {"status": "ok"}
 
@@ -165,8 +175,7 @@ def stop_all_outputs(device_id: str, db: Session = Depends(get_db)):
 @app.post("/internal/v1/devices/{device_id}/operations/filterpump/on", response_model=OperationCommandResponse)
 def filterpump_on(device_id: str, db: Session = Depends(get_db)):
     if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
-    require_normal(db, device_id, "FILTERPOMP AAN")
-    state = db.get(OutputState, device_id)
+    require_normal(db, device_id, "FILTERPOMP AAN"); state = db.get(OutputState, device_id)
     if state is None: raise HTTPException(status_code=409, detail="Geen actuele outputstatus beschikbaar")
     if state.r4: raise HTTPException(status_code=409, detail="FILTERPOMP AAN geblokkeerd: R4 aanvoer VAN zwembad is gesloten")
     if state.r8: raise HTTPException(status_code=409, detail="FILTERPOMP AAN geblokkeerd: R8 aanvoer NAAR zwembad is gesloten")
@@ -176,34 +185,40 @@ def filterpump_on(device_id: str, db: Session = Depends(get_db)):
 @app.post("/internal/v1/devices/{device_id}/operations/filterpump/off", response_model=OperationCommandResponse)
 def filterpump_off(device_id: str, db: Session = Depends(get_db)):
     if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
-    require_normal(db, device_id, "FILTERPOMP UIT")
-    now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "FILTERPUMP_OFF", now); db.commit(); db.refresh(command)
+    require_normal(db, device_id, "FILTERPOMP UIT"); now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "FILTERPUMP_OFF", now); db.commit(); db.refresh(command)
     return OperationCommandResponse(device_id=device_id, command="FILTERPUMP_OFF", pending=True, detail="Installatie wordt lokaal door de controller naar fail-safe teruggebracht", updated_at=command.updated_at)
 
 @app.post("/internal/v1/devices/{device_id}/operations/heatpump/on", response_model=OperationCommandResponse)
 def heatpump_on(device_id: str, db: Session = Depends(get_db)):
     if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
-    require_normal(db, device_id, "WARMTEPOMP AAN")
-    state = db.get(OutputState, device_id)
+    require_normal(db, device_id, "WARMTEPOMP AAN"); state = db.get(OutputState, device_id)
     if state is None: raise HTTPException(status_code=409, detail="Geen actuele outputstatus beschikbaar")
     if not state.r1: raise HTTPException(status_code=409, detail="WARMTEPOMP AAN geblokkeerd: filterpomp draait niet")
-    config = get_or_create_config(db, device_id)
-    if not config.filter_flow_safety_bypass:
-        telemetry = db.scalar(select(Telemetry).where(Telemetry.device_id == device_id).order_by(Telemetry.recorded_at.desc()).limit(1))
-        if telemetry is None: raise HTTPException(status_code=409, detail="WARMTEPOMP AAN geblokkeerd: geen flowmeting beschikbaar")
-        total_flow = (telemetry.flow_f1_lph or 0.0) + (telemetry.flow_f2_lph or 0.0)
-        if total_flow < config.filter_min_flow_lph: raise HTTPException(status_code=409, detail=f"WARMTEPOMP AAN geblokkeerd: totale flow {total_flow:.0f} L/h is lager dan {config.filter_min_flow_lph:.0f} L/h")
-    now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "HEATPUMP_ON", now); db.commit(); db.refresh(command)
-    detail = "Filterpomp draait; warmtepomp-startopdracht aangeboden"
-    if config.filter_flow_safety_bypass: detail += " (flowbeveiliging override actief)"
+    config = require_operational_flow(db, device_id, "WARMTEPOMP AAN"); now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "HEATPUMP_ON", now); db.commit(); db.refresh(command)
+    detail = "Filterpomp draait; warmtepomp-startopdracht aangeboden" + (" (flowbeveiliging override actief)" if config.filter_flow_safety_bypass else "")
     return OperationCommandResponse(device_id=device_id, command="HEATPUMP_ON", pending=True, detail=detail, updated_at=command.updated_at)
 
 @app.post("/internal/v1/devices/{device_id}/operations/heatpump/off", response_model=OperationCommandResponse)
 def heatpump_off(device_id: str, db: Session = Depends(get_db)):
     if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
-    require_normal(db, device_id, "WARMTEPOMP UIT")
-    now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "HEATPUMP_OFF", now); db.commit(); db.refresh(command)
+    require_normal(db, device_id, "WARMTEPOMP UIT"); now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "HEATPUMP_OFF", now); db.commit(); db.refresh(command)
     return OperationCommandResponse(device_id=device_id, command="HEATPUMP_OFF", pending=True, detail="Warmtepomp-stopopdracht aangeboden; filterpomp blijft draaien", updated_at=command.updated_at)
+
+@app.post("/internal/v1/devices/{device_id}/operations/collector/open", response_model=OperationCommandResponse)
+def collector_open(device_id: str, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    require_normal(db, device_id, "COLLECTOR OPEN"); state = db.get(OutputState, device_id)
+    if state is None: raise HTTPException(status_code=409, detail="Geen actuele outputstatus beschikbaar")
+    if not state.r1: raise HTTPException(status_code=409, detail="COLLECTOR OPEN geblokkeerd: filterpomp draait niet")
+    config = require_operational_flow(db, device_id, "COLLECTOR OPEN"); now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "COLLECTOR_OPEN", now); db.commit(); db.refresh(command)
+    detail = "Collector-openopdracht aangeboden: R7 opent, daarna sluit R8 na 10 seconden" + (" (flowbeveiliging override actief)" if config.filter_flow_safety_bypass else "")
+    return OperationCommandResponse(device_id=device_id, command="COLLECTOR_OPEN", pending=True, detail=detail, updated_at=command.updated_at)
+
+@app.post("/internal/v1/devices/{device_id}/operations/collector/close", response_model=OperationCommandResponse)
+def collector_close(device_id: str, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    require_normal(db, device_id, "COLLECTOR DICHT"); now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "COLLECTOR_CLOSE", now); db.commit(); db.refresh(command)
+    return OperationCommandResponse(device_id=device_id, command="COLLECTOR_CLOSE", pending=True, detail="Collector-sluitopdracht aangeboden: R8 opent, daarna sluit R7 na 15 seconden", updated_at=command.updated_at)
 
 @app.put("/internal/v1/devices/{device_id}/outputs/{output_id}/command", response_model=OutputCommandResponse)
 def set_output_command(device_id: str, output_id: str, payload: OutputCommandRequest, db: Session = Depends(get_db)):
@@ -229,20 +244,14 @@ def heartbeat(device_id: str, payload: HeartbeatRequest, authorization: str | No
     db.commit(); db.refresh(device); return HeartbeatResponse(device_id=device.device_id, firmware_version=device.firmware_version, last_seen=device.last_seen, uptime_seconds=device.uptime_seconds, wifi_connected=device.wifi_connected, status="online")
 
 @app.post("/api/v1/devices/{device_id}/telemetry", response_model=TelemetryResponse)
-def post_telemetry(device_id: str, payload: TelemetryRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    authorize_device(device_id, authorization)
-    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
-    values = payload.model_dump()
-    if not any(value is not None for value in values.values()): raise HTTPException(status_code=422, detail="Telemetry contains no values")
-    telemetry = Telemetry(device_id=device_id, **values); db.add(telemetry); db.commit(); db.refresh(telemetry); return telemetry_response(telemetry)
+def telemetry(device_id: str, payload: TelemetryRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    authorize_device(device_id, authorization); now = datetime.now(timezone.utc); row = Telemetry(device_id=device_id, recorded_at=now, **payload.model_dump()); db.add(row); db.commit(); db.refresh(row); return telemetry_response(row)
 
 @app.post("/api/v1/devices/{device_id}/output-state", response_model=OutputStateResponse)
-def post_output_state(device_id: str, payload: OutputStateRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    authorize_device(device_id, authorization)
-    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
-    now = datetime.now(timezone.utc); state = db.get(OutputState, device_id); values = payload.model_dump()
-    if state is None: state = OutputState(device_id=device_id, updated_at=now, **values); db.add(state)
+def report_output_state(device_id: str, payload: OutputStateRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    authorize_device(device_id, authorization); state = db.get(OutputState, device_id); now = datetime.now(timezone.utc)
+    if state is None: state = OutputState(device_id=device_id, **payload.model_dump(), updated_at=now); db.add(state)
     else:
-        for name, value in values.items(): setattr(state, name, value)
+        for key, value in payload.model_dump().items(): setattr(state, key, value)
         state.updated_at = now
     db.commit(); db.refresh(state); return output_state_response(state)
