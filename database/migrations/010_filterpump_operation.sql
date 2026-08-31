@@ -4,6 +4,9 @@ ALTER TABLE device_config
     ADD COLUMN IF NOT EXISTS filter_flow_grace_seconds INTEGER NOT NULL DEFAULT 10;
 
 ALTER TABLE output_commands
+    ALTER COLUMN output_id TYPE VARCHAR(30);
+
+ALTER TABLE output_commands
     DROP CONSTRAINT IF EXISTS output_commands_supported_output;
 
 ALTER TABLE output_commands
