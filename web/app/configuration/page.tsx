@@ -64,7 +64,7 @@ export default async function ConfigurationPage() {
         <Link className="tab" href="/">Dashboard</Link>
         <Link className="tab active" href="/configuration">Configuratie</Link>
         <span className="tab disabled">Programma&apos;s</span>
-        <span className="tab disabled">Hardware</span>
+        <Link className="tab" href="/hardware">Hardware</Link>
         <span className="tab disabled">Historie</span>
         <span className="tab disabled">Events</span>
         <span className="tab disabled">Systeem</span>
