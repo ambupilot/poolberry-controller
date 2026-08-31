@@ -1,19 +1,12 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 
 const API_URL = process.env.POOLBERRY_API_INTERNAL_URL ?? "http://api:8000";
 const DEVICE_ID = process.env.POOLBERRY_DEVICE_ID ?? "poolberry-main-001";
 
 type OutputState = {
-  device_id: string;
-  r1: boolean;
-  r2: boolean;
-  r3: boolean;
-  r4: boolean;
-  r5: boolean;
-  r6: boolean;
-  r7: boolean;
-  r8: boolean;
-  updated_at: string;
+  device_id: string; r1: boolean; r2: boolean; r3: boolean; r4: boolean;
+  r5: boolean; r6: boolean; r7: boolean; r8: boolean; updated_at: string;
 };
 
 const outputs = [
@@ -28,11 +21,7 @@ const outputs = [
 ];
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("nl-NL", {
-    dateStyle: "medium",
-    timeStyle: "medium",
-    timeZone: "Europe/Amsterdam",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat("nl-NL", { dateStyle: "medium", timeStyle: "medium", timeZone: "Europe/Amsterdam" }).format(new Date(value));
 }
 
 async function getOutputState(): Promise<OutputState | null> {
@@ -40,53 +29,49 @@ async function getOutputState(): Promise<OutputState | null> {
     const response = await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}/output-state`, { cache: "no-store" });
     if (!response.ok) return null;
     return response.json();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
+}
+
+async function setR1(formData: FormData) {
+  "use server";
+  const enabled = formData.get("enabled") === "true";
+  await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}/outputs/R1/command`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }), cache: "no-store",
+  });
+  revalidatePath("/hardware");
 }
 
 export default async function HardwarePage() {
   const state = await getOutputState();
-
   return (
     <main className="shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">PoolBerry Control</p>
-          <h1>Hardware</h1>
-        </div>
-      </header>
-
+      <header className="topbar"><div><p className="eyebrow">PoolBerry Control</p><h1>Hardware</h1></div></header>
       <nav className="tabs" aria-label="PoolBerry secties">
-        <Link className="tab" href="/">Dashboard</Link>
-        <Link className="tab" href="/configuration">Configuratie</Link>
-        <span className="tab disabled">Programma&apos;s</span>
-        <Link className="tab active" href="/hardware">Hardware</Link>
-        <span className="tab disabled">Historie</span>
-        <span className="tab disabled">Events</span>
-        <span className="tab disabled">Systeem</span>
+        <Link className="tab" href="/">Dashboard</Link><Link className="tab" href="/configuration">Configuratie</Link>
+        <span className="tab disabled">Programma&apos;s</span><Link className="tab active" href="/hardware">Hardware</Link>
+        <span className="tab disabled">Historie</span><span className="tab disabled">Events</span><span className="tab disabled">Systeem</span>
       </nav>
-
       {!state ? (
-        <section className="panel warning">
-          <h2>Outputstatus niet beschikbaar</h2>
-          <p>De hoofdcontroller heeft nog geen actuele outputstatus naar de VPS gestuurd.</p>
-        </section>
+        <section className="panel warning"><h2>Outputstatus niet beschikbaar</h2><p>De hoofdcontroller heeft nog geen actuele outputstatus naar de VPS gestuurd.</p></section>
       ) : (
         <section className="panel">
           <h2>Relais / outputs</h2>
           <p className="cardMeta">Laatste synchronisatie {formatDateTime(state.updated_at)}</p>
-          <p className="cardMeta">Dit zijn de door de Pico aangestuurde logische states. De fysieke COM/NO-contactwerking van de testrelais wordt nog afzonderlijk gevalideerd voordat belastingen worden aangesloten.</p>
-
+          <p className="cardMeta">LOW = COM/NO open = UIT. HIGH = COM/NO gesloten = AAN. Alleen R1 is in deze testfase op afstand bestuurbaar.</p>
           <div className="grid" style={{ marginTop: 20 }}>
             {outputs.map((output) => {
               const active = state[output.key];
               return (
                 <article className={`card ${active ? "primaryCard" : ""}`} key={output.id}>
-                  <div className="cardLabel">{output.id} · {output.gpio}</div>
-                  <div className="cardValue">{active ? "AAN" : "UIT"}</div>
-                  <div className="cardMeta">{output.role}</div>
-                  <div className="cardMeta">{output.type}</div>
+                  <div className="cardLabel">{output.id} · {output.gpio}</div><div className="cardValue">{active ? "AAN" : "UIT"}</div>
+                  <div className="cardMeta">{output.role}</div><div className="cardMeta">{output.type}</div>
+                  {output.id === "R1" && (
+                    <form action={setR1} style={{ marginTop: 16 }}>
+                      <input type="hidden" name="enabled" value={active ? "false" : "true"} />
+                      <button type="submit" className="primaryButton">R1 {active ? "uitschakelen" : "inschakelen"}</button>
+                    </form>
+                  )}
                 </article>
               );
             })}
