@@ -20,17 +20,23 @@ from config import (
     WIFI_PASSWORD,
     WIFI_SSID,
 )
+from outputs import initialise_outputs, output_states
 from sensors import SENSORS
 
 
 HEARTBEAT_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/heartbeat"
 TELEMETRY_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/telemetry"
 CONFIG_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/config"
+OUTPUT_STATE_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/output-state"
 
 # Fixed PoolBerry hardware pin allocation.
 ONEWIRE_GPIO = 18
 FLOW_F1_GPIO = 17
 FLOW_F2_GPIO = 27
+
+# Reassert the boot-time safe commanded OFF state and keep references to the
+# physical output pins. No output is turned on automatically during startup.
+output_pins = initialise_outputs()
 
 onewire_bus = onewire.OneWire(Pin(ONEWIRE_GPIO))
 temperature_bus = ds18x20.DS18X20(onewire_bus)
@@ -233,6 +239,16 @@ def send_heartbeat(wlan, uptime_seconds):
     return ok
 
 
+def send_output_state(wlan):
+    if not wlan.isconnected():
+        return False
+    payload = output_states(output_pins)
+    ok = post_json(OUTPUT_STATE_URL, payload)
+    if ok:
+        print("Output state OK:", payload)
+    return ok
+
+
 def send_telemetry(wlan, elapsed_seconds):
     if not wlan.isconnected():
         return False
@@ -258,6 +274,7 @@ def main():
     print("PoolBerry Edge Controller")
     print("Device:", DEVICE_ID)
     print("Firmware:", FIRMWARE_VERSION)
+    print("Outputs: GP8-GP15")
     print("1-Wire: GP" + str(ONEWIRE_GPIO))
     print("Flow F1: GP" + str(FLOW_F1_GPIO))
     print("Flow F2: GP" + str(FLOW_F2_GPIO))
@@ -269,6 +286,7 @@ def main():
     last_heartbeat_ms = None
     last_telemetry_ms = time.ticks_ms()
     last_config_ms = None
+    last_output_state_ms = None
 
     while True:
         if not wlan.isconnected():
@@ -284,6 +302,13 @@ def main():
         if last_heartbeat_ms is None or time.ticks_diff(now_ms, last_heartbeat_ms) >= HEARTBEAT_INTERVAL_SECONDS * 1000:
             send_heartbeat(wlan, uptime)
             last_heartbeat_ms = now_ms
+
+        # Output state is a current state rather than telemetry history. Report
+        # it periodically for recovery/resynchronisation; later state changes
+        # can trigger this function immediately as well.
+        if last_output_state_ms is None or time.ticks_diff(now_ms, last_output_state_ms) >= HEARTBEAT_INTERVAL_SECONDS * 1000:
+            send_output_state(wlan)
+            last_output_state_ms = now_ms
 
         elapsed_ms = time.ticks_diff(now_ms, last_telemetry_ms)
         if elapsed_ms >= TELEMETRY_INTERVAL_SECONDS * 1000:
