@@ -34,6 +34,12 @@ def set_output(pins, output_id, enabled):
     pins[output_id].value(OUTPUT_ON_LEVEL if enabled else OUTPUT_OFF_LEVEL)
 
 
+def all_outputs_off(pins):
+    """Immediately force all relay outputs to the logical OFF level."""
+    for output_id in OUTPUTS:
+        pins[output_id].value(OUTPUT_OFF_LEVEL)
+
+
 def output_states(pins):
     """Return logical states, independent of raw GPIO representation."""
     return {
