@@ -17,12 +17,12 @@ from .schemas import (
     TelemetryRequest, TelemetryResponse,
 )
 
-app = FastAPI(title="PoolBerry API", version="0.13.0")
+app = FastAPI(title="PoolBerry API", version="0.14.0")
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
 DEVICE_OFFLINE_AFTER_SECONDS = int(os.environ.get("DEVICE_OFFLINE_AFTER_SECONDS", "30"))
 SUPPORTED_OUTPUTS = {f"R{index}" for index in range(1, 9)}
-SUPPORTED_COMMANDS = SUPPORTED_OUTPUTS | {"STOP", "FILTERPUMP_ON", "FILTERPUMP_OFF", "HEATPUMP_ON", "HEATPUMP_OFF", "COLLECTOR_OPEN", "COLLECTOR_CLOSE"}
+SUPPORTED_COMMANDS = SUPPORTED_OUTPUTS | {"STOP", "FILTERPUMP_ON", "FILTERPUMP_OFF", "HEATPUMP_ON", "HEATPUMP_OFF", "COLLECTOR_OPEN", "COLLECTOR_CLOSE", "SOURCEPUMP_ON", "SOURCEPUMP_OFF"}
 
 
 def authorize_device(device_id: str, authorization: str | None) -> None:
@@ -115,6 +115,13 @@ def require_operational_flow(db: Session, device_id: str, label: str) -> DeviceC
     total_flow = (telemetry.flow_f1_lph or 0.0) + (telemetry.flow_f2_lph or 0.0)
     if total_flow < config.filter_min_flow_lph: raise HTTPException(status_code=409, detail=f"{label} geblokkeerd: totale flow {total_flow:.0f} L/h is lager dan {config.filter_min_flow_lph:.0f} L/h")
     return config
+
+
+def require_sourcepump_route(state: OutputState) -> None:
+    garden_open = not state.r6
+    source_to_pool_open = state.r5
+    if not (garden_open or source_to_pool_open): raise HTTPException(status_code=409, detail="BRONPOMP AAN geblokkeerd: R5 en R6 bieden geen open afvoerroute")
+    if source_to_pool_open and not state.r4: raise HTTPException(status_code=409, detail="BRONPOMP AAN geblokkeerd: R5 is open terwijl R4 aanvoer VAN zwembad niet gesloten is")
 
 
 @app.get("/health")
@@ -219,6 +226,21 @@ def collector_close(device_id: str, db: Session = Depends(get_db)):
     if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
     require_normal(db, device_id, "COLLECTOR DICHT"); now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "COLLECTOR_CLOSE", now); db.commit(); db.refresh(command)
     return OperationCommandResponse(device_id=device_id, command="COLLECTOR_CLOSE", pending=True, detail="Collector-sluitopdracht aangeboden: R8 opent, daarna sluit R7 na 15 seconden", updated_at=command.updated_at)
+
+@app.post("/internal/v1/devices/{device_id}/operations/sourcepump/on", response_model=OperationCommandResponse)
+def sourcepump_on(device_id: str, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    require_normal(db, device_id, "BRONPOMP AAN"); state = db.get(OutputState, device_id)
+    if state is None: raise HTTPException(status_code=409, detail="Geen actuele outputstatus beschikbaar")
+    require_sourcepump_route(state)
+    now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "SOURCEPUMP_ON", now); db.commit(); db.refresh(command)
+    return OperationCommandResponse(device_id=device_id, command="SOURCEPUMP_ON", pending=True, detail="Geldige afvoerroute aanwezig; bronpomp-startopdracht aangeboden", updated_at=command.updated_at)
+
+@app.post("/internal/v1/devices/{device_id}/operations/sourcepump/off", response_model=OperationCommandResponse)
+def sourcepump_off(device_id: str, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    require_normal(db, device_id, "BRONPOMP UIT"); now = datetime.now(timezone.utc); command = queue_operation(db, device_id, "SOURCEPUMP_OFF", now); db.commit(); db.refresh(command)
+    return OperationCommandResponse(device_id=device_id, command="SOURCEPUMP_OFF", pending=True, detail="Bronpomp-stopopdracht aangeboden; kleppen blijven ongewijzigd", updated_at=command.updated_at)
 
 @app.put("/internal/v1/devices/{device_id}/outputs/{output_id}/command", response_model=OutputCommandResponse)
 def set_output_command(device_id: str, output_id: str, payload: OutputCommandRequest, db: Session = Depends(get_db)):
