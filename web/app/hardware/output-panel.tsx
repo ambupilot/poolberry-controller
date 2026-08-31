@@ -127,12 +127,17 @@ export default function OutputPanel({ initialState }: { initialState: OutputStat
         const relayActive = state[output.key];
         const switching = pending[output.id] !== undefined;
         const displayState = switching ? "SCHAKELEN…" : physicalState(output, relayActive);
+        const isPump = output.type === "Pomp";
+        const mainStateStyle = !switching && isPump && relayActive ? { color: "#16a34a" } : undefined;
+        const relayStateStyle = !isPump && relayActive ? { color: "#dc2626", fontWeight: 700 } : undefined;
 
         return <article className={`card ${relayActive ? "primaryCard" : ""}`} key={output.id}>
           <div className="cardLabel">{output.id} · {output.gpio}</div>
-          <div className="cardValue">{displayState}</div>
+          <div className="cardValue" style={mainStateStyle}>{displayState}</div>
           <div className="cardMeta">{output.role}</div>
-          <div className="cardMeta">{output.type} · relais {relayActive ? "AAN" : "UIT"}</div>
+          <div className="cardMeta">
+            {output.type} · relais <span style={relayStateStyle}>{relayActive ? "AAN" : "UIT"}</span>
+          </div>
           <button
             type="button"
             className="primaryButton"
