@@ -89,6 +89,7 @@ export default async function Home() {
 
       <nav className="tabs" aria-label="PoolBerry secties">
         <Link className="tab active" href="/">Dashboard</Link>
+        <Link className="tab" href="/control">Bediening</Link>
         <Link className="tab" href="/configuration">Configuratie</Link>
         <span className="tab disabled">Programma&apos;s</span>
         <Link className="tab" href="/hardware">Hardware</Link>
