@@ -3,23 +3,25 @@ import hmac
 import os
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Device, DeviceConfig, Telemetry
+from .models import Device, DeviceConfig, OutputState, Telemetry
 from .schemas import (
     DeviceConfigResponse,
     DeviceConfigUpdate,
     DeviceStatusResponse,
     HeartbeatRequest,
     HeartbeatResponse,
+    OutputStateRequest,
+    OutputStateResponse,
     TelemetryRequest,
     TelemetryResponse,
 )
 
-app = FastAPI(title="PoolBerry API", version="0.5.0")
+app = FastAPI(title="PoolBerry API", version="0.6.0")
 
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
@@ -81,6 +83,21 @@ def telemetry_response(t: Telemetry) -> TelemetryResponse:
     )
 
 
+def output_state_response(state: OutputState) -> OutputStateResponse:
+    return OutputStateResponse(
+        device_id=state.device_id,
+        r1=state.r1,
+        r2=state.r2,
+        r3=state.r3,
+        r4=state.r4,
+        r5=state.r5,
+        r6=state.r6,
+        r7=state.r7,
+        r8=state.r8,
+        updated_at=state.updated_at,
+    )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -138,6 +155,14 @@ def get_latest_telemetry(device_id: str, db: Session = Depends(get_db)):
     return telemetry_response(telemetry)
 
 
+@app.get("/internal/v1/devices/{device_id}/output-state", response_model=OutputStateResponse)
+def get_output_state(device_id: str, db: Session = Depends(get_db)):
+    state = db.get(OutputState, device_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Output state not found")
+    return output_state_response(state)
+
+
 @app.post("/api/v1/devices/{device_id}/heartbeat", response_model=HeartbeatResponse)
 def heartbeat(device_id: str, payload: HeartbeatRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     authorize_device(device_id, authorization)
@@ -169,3 +194,25 @@ def post_telemetry(device_id: str, payload: TelemetryRequest, authorization: str
     db.commit()
     db.refresh(telemetry)
     return telemetry_response(telemetry)
+
+
+@app.post("/api/v1/devices/{device_id}/output-state", response_model=OutputStateResponse)
+def post_output_state(device_id: str, payload: OutputStateRequest, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    authorize_device(device_id, authorization)
+    if db.get(Device, device_id) is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    now = datetime.now(timezone.utc)
+    state = db.get(OutputState, device_id)
+    values = payload.model_dump()
+    if state is None:
+        state = OutputState(device_id=device_id, updated_at=now, **values)
+        db.add(state)
+    else:
+        for name, value in values.items():
+            setattr(state, name, value)
+        state.updated_at = now
+
+    db.commit()
+    db.refresh(state)
+    return output_state_response(state)
