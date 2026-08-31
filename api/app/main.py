@@ -16,10 +16,11 @@ from .schemas import (
     TelemetryRequest, TelemetryResponse,
 )
 
-app = FastAPI(title="PoolBerry API", version="0.7.0")
+app = FastAPI(title="PoolBerry API", version="0.8.0")
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
 DEVICE_OFFLINE_AFTER_SECONDS = int(os.environ.get("DEVICE_OFFLINE_AFTER_SECONDS", "30"))
+SUPPORTED_OUTPUTS = {f"R{index}" for index in range(1, 9)}
 
 
 def authorize_device(device_id: str, authorization: str | None) -> None:
@@ -33,6 +34,13 @@ def authorize_device(device_id: str, authorization: str | None) -> None:
     supplied_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     if not hmac.compare_digest(supplied_hash, DEVICE_TOKEN_SHA256):
         raise HTTPException(status_code=401, detail="Invalid device token")
+
+
+def normalize_output_id(output_id: str) -> str:
+    normalized = output_id.upper()
+    if normalized not in SUPPORTED_OUTPUTS:
+        raise HTTPException(status_code=404, detail="Unknown output")
+    return normalized
 
 
 def device_status(device: Device) -> str:
@@ -116,13 +124,14 @@ def get_output_state(device_id: str, db: Session = Depends(get_db)):
     return output_state_response(state)
 
 
-@app.put("/internal/v1/devices/{device_id}/outputs/R1/command", response_model=OutputCommandResponse)
-def set_r1_command(device_id: str, payload: OutputCommandRequest, db: Session = Depends(get_db)):
+@app.put("/internal/v1/devices/{device_id}/outputs/{output_id}/command", response_model=OutputCommandResponse)
+def set_output_command(device_id: str, output_id: str, payload: OutputCommandRequest, db: Session = Depends(get_db)):
     if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    output_id = normalize_output_id(output_id)
     now = datetime.now(timezone.utc)
-    command = db.get(OutputCommand, (device_id, "R1"))
+    command = db.get(OutputCommand, (device_id, output_id))
     if command is None:
-        command = OutputCommand(device_id=device_id, output_id="R1", enabled=payload.enabled, pending=True, updated_at=now)
+        command = OutputCommand(device_id=device_id, output_id=output_id, enabled=payload.enabled, pending=True, updated_at=now)
         db.add(command)
     else:
         command.enabled = payload.enabled; command.pending = True; command.updated_at = now
@@ -140,7 +149,8 @@ def get_next_command(device_id: str, authorization: str | None = Header(default=
 @app.post("/api/v1/devices/{device_id}/commands/{output_id}/ack", response_model=OutputCommandResponse)
 def acknowledge_command(device_id: str, output_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     authorize_device(device_id, authorization)
-    command = db.get(OutputCommand, (device_id, output_id.upper()))
+    output_id = normalize_output_id(output_id)
+    command = db.get(OutputCommand, (device_id, output_id))
     if command is None: raise HTTPException(status_code=404, detail="Command not found")
     command.pending = False; command.updated_at = datetime.now(timezone.utc)
     db.commit(); db.refresh(command)
