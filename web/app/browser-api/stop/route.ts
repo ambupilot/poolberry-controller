@@ -11,7 +11,6 @@ export async function POST() {
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   const session = await verifySessionToken(token, process.env.POOLBERRY_AUTH_SESSION_SECRET);
   if (!session) return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
-  if (session.role !== "ADMIN") return NextResponse.json({ detail: "Admin access required" }, { status: 403 });
 
   try {
     const response = await fetch(`${API_URL}/internal/v1/devices/${DEVICE_ID}/stop`, {
