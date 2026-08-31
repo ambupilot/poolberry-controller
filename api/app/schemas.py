@@ -90,3 +90,13 @@ class OutputCommandResponse(BaseModel):
     enabled: bool
     pending: bool
     updated_at: datetime
+
+
+class ControllerModeUpdate(BaseModel):
+    mode: str = Field(pattern="^(NORMAL|MANUAL)$")
+
+
+class ControllerModeResponse(BaseModel):
+    device_id: str
+    mode: str
+    updated_at: datetime
