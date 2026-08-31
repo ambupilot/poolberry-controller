@@ -1,13 +1,25 @@
 import Link from "next/link";
 
-const commands = [
-  { group: "Filterpomp", items: ["FILTERPOMP AAN", "FILTERPOMP UIT"] },
-  { group: "Warmtepomp", items: ["WARMTEPOMP AAN", "WARMTEPOMP UIT"] },
-  { group: "Collector", items: ["COLLECTOR OPEN", "COLLECTOR DICHT"] },
-  { group: "Bronpomp", items: ["BRONPOMP AAN", "BRONPOMP UIT"] },
+const installationControls = [
+  { label: "FILTERPOMP", on: "AAN", off: "UIT" },
+  { label: "WARMTEPOMP", on: "AAN", off: "UIT" },
+  { label: "COLLECTOR", on: "OPEN", off: "DICHT" },
+  { label: "BRONPOMP", on: "AAN", off: "UIT" },
 ];
 
 const programs = ["AUTO", "SPOELEN", "SPROEIEN"];
+
+const controlButtonBase = {
+  minHeight: 72,
+  border: 0,
+  borderRadius: 10,
+  color: "white",
+  fontWeight: 700,
+  fontSize: 15,
+  lineHeight: 1.2,
+  letterSpacing: "0.02em",
+  cursor: "not-allowed",
+} as const;
 
 export default function ControlPage() {
   return (
@@ -38,29 +50,34 @@ export default function ControlPage() {
 
       <section className="panel">
         <h2>Installatie</h2>
-        <div className="grid">
-          {commands.map((group) => (
-            <article className="card" key={group.group}>
-              <div className="cardLabel">{group.group}</div>
-              <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
-                {group.items.map((command) => <button key={command} type="button" className="primaryButton" disabled>{command}</button>)}
-              </div>
-            </article>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+          {installationControls.map((control) => (
+            <button key={`${control.label}-on`} type="button" disabled style={{ ...controlButtonBase, background: "rgba(22, 163, 74, 0.70)" }}>
+              <span style={{ display: "block" }}>{control.label}</span>
+              <span style={{ display: "block", marginTop: 4 }}>{control.on}</span>
+            </button>
+          ))}
+          {installationControls.map((control) => (
+            <button key={`${control.label}-off`} type="button" disabled style={{ ...controlButtonBase, background: "rgba(220, 38, 38, 0.70)" }}>
+              <span style={{ display: "block" }}>{control.label}</span>
+              <span style={{ display: "block", marginTop: 4 }}>{control.off}</span>
+            </button>
           ))}
         </div>
+        <p className="cardMeta" style={{ marginTop: 12 }}>Groen = inschakelen/openen · rood = uitschakelen/sluiten. Inactieve status 70%; actieve status wordt later volledig gekleurd weergegeven.</p>
       </section>
 
       <section className="panel">
         <h2>Programma&apos;s</h2>
-        <div className="grid">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
           {programs.map((program) => (
-            <article className="card" key={program}>
-              <div className="cardLabel">Programma</div>
-              <div className="cardValue">{program}</div>
-              <button type="button" className="primaryButton" style={{ marginTop: 16 }} disabled>{program} starten</button>
-            </article>
+            <button key={program} type="button" disabled style={{ ...controlButtonBase, background: "rgba(37, 99, 235, 0.70)" }}>
+              <span style={{ display: "block" }}>{program}</span>
+              <span style={{ display: "block", marginTop: 4 }}>UIT</span>
+            </button>
           ))}
         </div>
+        <p className="cardMeta" style={{ marginTop: 12 }}>Blauw 70% = programma UIT. Wanneer een programma actief is wordt de knop duidelijker blauw en toont deze AAN.</p>
       </section>
 
       <section className="panel warning">
