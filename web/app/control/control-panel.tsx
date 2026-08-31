@@ -10,7 +10,7 @@ const controls = [
   { key: "filter", label: "FILTERPOMP", on: "AAN", off: "UIT", enabled: true },
   { key: "heat", label: "WARMTEPOMP", on: "AAN", off: "UIT", enabled: true },
   { key: "collector", label: "COLLECTOR", on: "OPEN", off: "DICHT", enabled: true },
-  { key: "source", label: "BRONPOMP", on: "AAN", off: "UIT", enabled: false },
+  { key: "source", label: "BRONPOMP", on: "AAN", off: "UIT", enabled: true },
 ];
 const programs = ["AUTO", "SPOELEN", "SPROEIEN"];
 const base = { minHeight: 72, border: 0, borderRadius: 10, color: "white", fontWeight: 700, fontSize: 15, lineHeight: 1.2, letterSpacing: "0.02em" } as const;
@@ -39,7 +39,7 @@ export default function ControlPanel({ initialState, initialMode }: { initialSta
     const timer = window.setInterval(refresh, 2000); return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
 
-  async function operation(kind: "filterpump" | "heatpump" | "collector", action: string) {
+  async function operation(kind: "filterpump" | "heatpump" | "collector" | "sourcepump", action: string) {
     setBusy(true); setMessage(null);
     const transition: CollectorTransition = kind === "collector" ? (action === "open" ? "opening" : "closing") : null;
     const stoppingFilter = kind === "filterpump" && action === "off";
@@ -59,15 +59,15 @@ export default function ControlPanel({ initialState, initialMode }: { initialSta
   }
 
   const normal = mode.mode === "NORMAL";
-  function isOn(key: string) { if (key === "filter") return state.r1; if (key === "heat") return state.r2; if (key === "collector") return state.r7 && state.r8; return false; }
-  function click(key: string, action: "on" | "off") { if (key === "filter") return operation("filterpump", action); if (key === "heat") return operation("heatpump", action); if (key === "collector") return operation("collector", action === "on" ? "open" : "close"); }
+  function isOn(key: string) { if (key === "filter") return state.r1; if (key === "heat") return state.r2; if (key === "collector") return state.r7 && state.r8; if (key === "source") return state.r3; return false; }
+  function click(key: string, action: "on" | "off") { if (key === "filter") return operation("filterpump", action); if (key === "heat") return operation("heatpump", action); if (key === "collector") return operation("collector", action === "on" ? "open" : "close"); if (key === "source") return operation("sourcepump", action); }
   const transitionActive = collectorTransition !== null || filterStopping;
 
   return <>
     <style>{`@keyframes poolberryControlBlink { from { opacity: 1; } to { opacity: .28; } }`}</style>
     <section className="panel">
       <h2>Installatie</h2>
-      <p className="cardMeta">Controller-modus: {mode.mode}. Filterpomp, warmtepomp en collector zijn operationeel aangesloten.</p>
+      <p className="cardMeta">Controller-modus: {mode.mode}. Operationele pomp- en collectorbediening is actief.</p>
       {message && <div className="panel warning" style={{ marginTop: 12 }}><p>{message}</p></div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, marginTop: 16 }}>
         {controls.map((control) => { const active = isOn(control.key); const clickable = control.enabled && normal && !busy && !transitionActive; const blinking = control.key === "collector" && collectorTransition === "opening"; return <button key={`${control.key}-on`} type="button" disabled={!clickable} onClick={() => click(control.key, "on")} style={{ ...base, background: `rgba(22, 163, 74, ${active || blinking ? "0.90" : "0.20"})`, cursor: clickable ? "pointer" : "not-allowed", ...(blinking ? blinkStyle : {}) }}><span style={{ display: "block" }}>{control.label}</span><span style={{ display: "block", marginTop: 4 }}>{control.on}</span></button>; })}
