@@ -52,32 +52,32 @@ export default function ControlPage() {
         <h2>Installatie</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
           {installationControls.map((control) => (
-            <button key={`${control.label}-on`} type="button" disabled style={{ ...controlButtonBase, background: "rgba(22, 163, 74, 0.70)" }}>
+            <button key={`${control.label}-on`} type="button" disabled style={{ ...controlButtonBase, background: "rgba(22, 163, 74, 0.35)" }}>
               <span style={{ display: "block" }}>{control.label}</span>
               <span style={{ display: "block", marginTop: 4 }}>{control.on}</span>
             </button>
           ))}
           {installationControls.map((control) => (
-            <button key={`${control.label}-off`} type="button" disabled style={{ ...controlButtonBase, background: "rgba(220, 38, 38, 0.70)" }}>
+            <button key={`${control.label}-off`} type="button" disabled style={{ ...controlButtonBase, background: "rgba(220, 38, 38, 0.35)" }}>
               <span style={{ display: "block" }}>{control.label}</span>
               <span style={{ display: "block", marginTop: 4 }}>{control.off}</span>
             </button>
           ))}
         </div>
-        <p className="cardMeta" style={{ marginTop: 12 }}>Groen = inschakelen/openen · rood = uitschakelen/sluiten. Inactieve status 70%; actieve status wordt later volledig gekleurd weergegeven.</p>
+        <p className="cardMeta" style={{ marginTop: 12 }}>Gedimd groen/rood = niet actief. De actieve toestand wordt later met de duidelijkere 70%-kleur weergegeven.</p>
       </section>
 
       <section className="panel">
         <h2>Programma&apos;s</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
           {programs.map((program) => (
-            <button key={program} type="button" disabled style={{ ...controlButtonBase, background: "rgba(37, 99, 235, 0.70)" }}>
+            <button key={program} type="button" disabled style={{ ...controlButtonBase, background: "rgba(37, 99, 235, 0.35)" }}>
               <span style={{ display: "block" }}>{program}</span>
               <span style={{ display: "block", marginTop: 4 }}>UIT</span>
             </button>
           ))}
         </div>
-        <p className="cardMeta" style={{ marginTop: 12 }}>Blauw 70% = programma UIT. Wanneer een programma actief is wordt de knop duidelijker blauw en toont deze AAN.</p>
+        <p className="cardMeta" style={{ marginTop: 12 }}>Gedimd blauw = programma UIT. Wanneer een programma actief is wordt de duidelijkere 70%-kleur gebruikt en toont de knop AAN.</p>
       </section>
 
       <section className="panel warning">
