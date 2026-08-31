@@ -66,3 +66,11 @@ class OutputCommand(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ControllerMode(Base):
+    __tablename__ = "controller_mode"
+
+    device_id: Mapped[str] = mapped_column(String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="NORMAL")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
