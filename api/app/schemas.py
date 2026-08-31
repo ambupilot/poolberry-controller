@@ -62,3 +62,19 @@ class TelemetryResponse(BaseModel):
     temperature_t6_c: float | None = None
     flow_f1_lph: float | None = None
     flow_f2_lph: float | None = None
+
+
+class OutputStateRequest(BaseModel):
+    r1: bool
+    r2: bool
+    r3: bool
+    r4: bool
+    r5: bool
+    r6: bool
+    r7: bool
+    r8: bool
+
+
+class OutputStateResponse(OutputStateRequest):
+    device_id: str
+    updated_at: datetime
