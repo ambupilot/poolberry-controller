@@ -17,11 +17,12 @@ from .schemas import (
     TelemetryRequest, TelemetryResponse,
 )
 
-app = FastAPI(title="PoolBerry API", version="0.9.0")
+app = FastAPI(title="PoolBerry API", version="0.10.0")
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
 DEVICE_OFFLINE_AFTER_SECONDS = int(os.environ.get("DEVICE_OFFLINE_AFTER_SECONDS", "30"))
 SUPPORTED_OUTPUTS = {f"R{index}" for index in range(1, 9)}
+SUPPORTED_COMMANDS = SUPPORTED_OUTPUTS | {"STOP"}
 
 
 def authorize_device(device_id: str, authorization: str | None) -> None:
@@ -41,6 +42,13 @@ def normalize_output_id(output_id: str) -> str:
     normalized = output_id.upper()
     if normalized not in SUPPORTED_OUTPUTS:
         raise HTTPException(status_code=404, detail="Unknown output")
+    return normalized
+
+
+def normalize_command_id(command_id: str) -> str:
+    normalized = command_id.upper()
+    if normalized not in SUPPORTED_COMMANDS:
+        raise HTTPException(status_code=404, detail="Unknown command")
     return normalized
 
 
@@ -98,6 +106,14 @@ def set_command(db: Session, device_id: str, output_id: str, enabled: bool, now:
         command.pending = True
         command.updated_at = now
     return command
+
+
+def queue_stop(db: Session, device_id: str, now: datetime) -> OutputCommand:
+    # STOP supersedes all pending actuator work. The Pico executes this one command atomically.
+    for command in db.scalars(select(OutputCommand).where(OutputCommand.device_id == device_id, OutputCommand.pending.is_(True))).all():
+        command.pending = False
+        command.updated_at = now
+    return set_command(db, device_id, "STOP", False, now)
 
 
 @app.get("/health")
@@ -167,13 +183,21 @@ def update_controller_mode(device_id: str, payload: ControllerModeUpdate, db: Se
             command.pending = False
             command.updated_at = now
     elif target == "NORMAL":
-        for output_id in sorted(SUPPORTED_OUTPUTS):
-            set_command(db, device_id, output_id, False, now)
+        queue_stop(db, device_id, now)
 
     mode.mode = target
     mode.updated_at = now
     db.commit(); db.refresh(mode)
     return mode_response(mode)
+
+
+@app.post("/internal/v1/devices/{device_id}/stop", response_model=OutputCommandResponse)
+def stop_all_outputs(device_id: str, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    now = datetime.now(timezone.utc)
+    command = queue_stop(db, device_id, now)
+    db.commit(); db.refresh(command)
+    return command_response(command)
 
 
 @app.put("/internal/v1/devices/{device_id}/outputs/{output_id}/command", response_model=OutputCommandResponse)
@@ -195,11 +219,11 @@ def get_next_command(device_id: str, authorization: str | None = Header(default=
     return None if command is None else command_response(command)
 
 
-@app.post("/api/v1/devices/{device_id}/commands/{output_id}/ack", response_model=OutputCommandResponse)
-def acknowledge_command(device_id: str, output_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+@app.post("/api/v1/devices/{device_id}/commands/{command_id}/ack", response_model=OutputCommandResponse)
+def acknowledge_command(device_id: str, command_id: str, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     authorize_device(device_id, authorization)
-    output_id = normalize_output_id(output_id)
-    command = db.get(OutputCommand, (device_id, output_id))
+    command_id = normalize_command_id(command_id)
+    command = db.get(OutputCommand, (device_id, command_id))
     if command is None: raise HTTPException(status_code=404, detail="Command not found")
     command.pending = False; command.updated_at = datetime.now(timezone.utc)
     db.commit(); db.refresh(command)
