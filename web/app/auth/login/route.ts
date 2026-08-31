@@ -4,7 +4,7 @@ import {
   createSessionToken,
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
-} from "@/auth/session";
+} from "../../../auth/session";
 
 export const runtime = "nodejs";
 
