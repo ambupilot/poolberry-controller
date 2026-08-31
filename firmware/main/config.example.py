@@ -1,5 +1,5 @@
 DEVICE_ID = "poolberry-main-001"
-FIRMWARE_VERSION = "0.8.0"
+FIRMWARE_VERSION = "0.10.0"
 
 WIFI_SSID = "your-wifi-ssid"
 WIFI_PASSWORD = "your-wifi-password"
