@@ -13,7 +13,7 @@ from config import (
     FIRMWARE_VERSION, HEARTBEAT_INTERVAL_SECONDS, TELEMETRY_INTERVAL_SECONDS,
     WIFI_CONNECT_TIMEOUT_SECONDS, WIFI_PASSWORD, WIFI_SSID,
 )
-from outputs import OUTPUTS, initialise_outputs, output_states, set_output
+from outputs import OUTPUTS, all_outputs_off, initialise_outputs, output_states, set_output
 from sensors import SENSORS
 
 HEARTBEAT_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/heartbeat"
@@ -107,6 +107,16 @@ def poll_command(wlan):
         data = ujson.loads(response.text)
         if data is None: return True
         output_id = str(data.get("output_id", "")).upper(); enabled = data.get("enabled")
+
+        if output_id == "STOP":
+            print("Command: STOP - all outputs OFF")
+            all_outputs_off(output_pins)
+            if not send_output_state(wlan): return False
+            ack_url = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/commands/STOP/ack"
+            if not post_json(ack_url, {}): return False
+            print("Command acknowledged: STOP")
+            return True
+
         if output_id not in OUTPUTS or not isinstance(enabled, bool): print("Command rejected:", data); return False
         print("Command:", output_id, "ON" if enabled else "OFF")
         set_output(output_pins, output_id, enabled)
