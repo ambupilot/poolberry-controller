@@ -19,6 +19,8 @@ OUTPUT_STATE_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "
 COMMAND_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/commands/next"
 COMMAND_POLL_INTERVAL_SECONDS = 2
 FILTERPUMP_SHUTDOWN_DELAY_SECONDS = 5
+COLLECTOR_OPEN_DELAY_SECONDS = 10
+COLLECTOR_CLOSE_DELAY_SECONDS = 15
 ONEWIRE_GPIO = 18; FLOW_F1_GPIO = 17; FLOW_F2_GPIO = 27
 output_pins = initialise_outputs(); onewire_bus = onewire.OneWire(Pin(ONEWIRE_GPIO)); temperature_bus = ds18x20.DS18X20(onewire_bus)
 SENSOR_BY_DEVICE_ID = {definition["device_id"].lower(): sensor_name for sensor_name, definition in SENSORS.items()}
@@ -76,8 +78,7 @@ def refresh_config(wlan):
             try: response.close()
             except Exception: pass
 
-def acknowledge_command(command_id):
-    return post_json(API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/commands/" + command_id + "/ack", {})
+def acknowledge_command(command_id): return post_json(API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/commands/" + command_id + "/ack", {})
 
 def execute_filterpump_on(wlan):
     global filter_operation_started_ms
@@ -85,21 +86,47 @@ def execute_filterpump_on(wlan):
     if states["r4"] or states["r8"]: print("FILTERPUMP_ON rejected locally: pool route is not open"); return False
     set_output(output_pins, "R1", True); filter_operation_started_ms = time.ticks_ms(); print("FILTERPUMP_ON: R1 ON"); return send_output_state(wlan)
 
+def execute_collector_open(wlan):
+    states = output_states(output_pins)
+    if not states["r1"]: print("COLLECTOR_OPEN rejected locally: filter pump is OFF"); return False
+    print("COLLECTOR_OPEN: R7 ON - collector route opening")
+    set_output(output_pins, "R7", True)
+    if not send_output_state(wlan): return False
+    time.sleep(COLLECTOR_OPEN_DELAY_SECONDS)
+    if not output_states(output_pins)["r1"]: print("COLLECTOR_OPEN aborted: filter pump is OFF"); set_output(output_pins, "R7", False); return send_output_state(wlan)
+    set_output(output_pins, "R8", True); print("COLLECTOR_OPEN: R8 ON after", COLLECTOR_OPEN_DELAY_SECONDS, "s - bypass closed")
+    return send_output_state(wlan)
+
+def execute_collector_close(wlan):
+    print("COLLECTOR_CLOSE: R8 OFF - normal route opening")
+    set_output(output_pins, "R8", False)
+    if not send_output_state(wlan): return False
+    time.sleep(COLLECTOR_CLOSE_DELAY_SECONDS)
+    set_output(output_pins, "R7", False); print("COLLECTOR_CLOSE: R7 OFF after", COLLECTOR_CLOSE_DELAY_SECONDS, "s - collector route closed")
+    return send_output_state(wlan)
+
 def execute_filterpump_off(wlan):
     global filter_operation_started_ms
-    print("FILTERPUMP_OFF: dependent outputs to fail-safe")
-    for output_id in ("R2", "R3", "R4", "R5", "R6", "R7", "R8"): set_output(output_pins, output_id, False)
+    states = output_states(output_pins)
+    print("FILTERPUMP_OFF: heat/source/dependent outputs OFF")
+    for output_id in ("R2", "R3", "R4", "R5", "R6"): set_output(output_pins, output_id, False)
+    collector_active = states["r7"] or states["r8"]
+    set_output(output_pins, "R8", False)
+    if not send_output_state(wlan): return False
+    if collector_active:
+        print("FILTERPUMP_OFF: normal route open; waiting", COLLECTOR_CLOSE_DELAY_SECONDS, "s before closing collector")
+        time.sleep(COLLECTOR_CLOSE_DELAY_SECONDS)
+    set_output(output_pins, "R7", False)
     if not send_output_state(wlan): return False
     time.sleep(FILTERPUMP_SHUTDOWN_DELAY_SECONDS); set_output(output_pins, "R1", False); filter_operation_started_ms = None
-    print("FILTERPUMP_OFF: R1 OFF after", FILTERPUMP_SHUTDOWN_DELAY_SECONDS, "s"); return send_output_state(wlan)
+    print("FILTERPUMP_OFF: R1 OFF after collector safe-close and", FILTERPUMP_SHUTDOWN_DELAY_SECONDS, "s final delay"); return send_output_state(wlan)
 
 def execute_heatpump_on(wlan):
     states = output_states(output_pins)
     if not states["r1"]: print("HEATPUMP_ON rejected locally: filter pump is OFF"); return False
     set_output(output_pins, "R2", True); print("HEATPUMP_ON: R2 ON"); return send_output_state(wlan)
 
-def execute_heatpump_off(wlan):
-    set_output(output_pins, "R2", False); print("HEATPUMP_OFF: R2 OFF, R1 unchanged"); return send_output_state(wlan)
+def execute_heatpump_off(wlan): set_output(output_pins, "R2", False); print("HEATPUMP_OFF: R2 OFF, R1 unchanged"); return send_output_state(wlan)
 
 def poll_command(wlan):
     global filter_operation_started_ms
@@ -116,7 +143,7 @@ def poll_command(wlan):
             if not send_output_state(wlan): return False
             if not acknowledge_command("STOP"): return False
             print("Command acknowledged: STOP"); return True
-        handlers = {"FILTERPUMP_ON": execute_filterpump_on, "FILTERPUMP_OFF": execute_filterpump_off, "HEATPUMP_ON": execute_heatpump_on, "HEATPUMP_OFF": execute_heatpump_off}
+        handlers = {"FILTERPUMP_ON": execute_filterpump_on, "FILTERPUMP_OFF": execute_filterpump_off, "HEATPUMP_ON": execute_heatpump_on, "HEATPUMP_OFF": execute_heatpump_off, "COLLECTOR_OPEN": execute_collector_open, "COLLECTOR_CLOSE": execute_collector_close}
         if command_id in handlers:
             if not handlers[command_id](wlan): return False
             if not acknowledge_command(command_id): return False
