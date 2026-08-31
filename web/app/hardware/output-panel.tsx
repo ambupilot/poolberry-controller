@@ -60,6 +60,7 @@ export default function OutputPanel({ initialState, initialMode }: { initialStat
   const [mode, setMode] = useState(initialMode);
   const [pending, setPending] = useState<Partial<Record<OutputId, boolean>>>({});
   const [modePending, setModePending] = useState(false);
+  const [stopPending, setStopPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingSince = useRef<Partial<Record<OutputId, number>>>({});
 
@@ -79,6 +80,10 @@ export default function OutputPanel({ initialState, initialMode }: { initialStat
         setState(nextState);
         setMode(nextMode);
         setError(null);
+
+        if (!nextState.r1 && !nextState.r2 && !nextState.r3 && !nextState.r4 && !nextState.r5 && !nextState.r6 && !nextState.r7 && !nextState.r8) {
+          setStopPending(false);
+        }
 
         setPending((current) => {
           const updated = { ...current };
@@ -121,6 +126,7 @@ export default function OutputPanel({ initialState, initialMode }: { initialStat
       const next = (await response.json()) as ControllerMode;
       setMode(next);
       if (target === "NORMAL") {
+        setStopPending(true);
         setPending({});
         pendingSince.current = {};
       }
@@ -128,6 +134,20 @@ export default function OutputPanel({ initialState, initialMode }: { initialStat
       setError(`Controller kon niet naar ${target} worden gezet.`);
     } finally {
       setModePending(false);
+    }
+  }
+
+  async function stopAll() {
+    setStopPending(true);
+    setPending({});
+    pendingSince.current = {};
+    setError(null);
+    try {
+      const response = await fetch("/browser-api/stop", { method: "POST" });
+      if (!response.ok) throw new Error("stop");
+    } catch {
+      setStopPending(false);
+      setError("STOP-opdracht kon niet worden verstuurd.");
     }
   }
 
@@ -173,16 +193,27 @@ export default function OutputPanel({ initialState, initialMode }: { initialStat
           ? "Automatische/operationele besturing is geblokkeerd. R1–R8 kunnen rechtstreeks worden geschakeld."
           : "Directe relaisbediening is vergrendeld."}
       </div>
-      <button
-        type="button"
-        className="primaryButton"
-        style={{ marginTop: 16 }}
-        disabled={modePending}
-        onClick={() => changeMode(manualActive ? "NORMAL" : "MANUAL")}
-      >
-        {modePending ? "Modus wijzigen…" : manualActive ? "MANUAL beëindigen" : "MANUAL inschakelen"}
-      </button>
-      {manualActive && <p className="cardMeta" style={{ marginTop: 10 }}>Bij beëindigen worden R1–R8 naar relais UIT gestuurd.</p>}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+        <button
+          type="button"
+          className="primaryButton"
+          disabled={modePending || stopPending}
+          onClick={() => changeMode(manualActive ? "NORMAL" : "MANUAL")}
+        >
+          {modePending ? "Modus wijzigen…" : manualActive ? "MANUAL beëindigen" : "MANUAL inschakelen"}
+        </button>
+        <button
+          type="button"
+          className="primaryButton"
+          style={{ background: "#dc2626", borderColor: "#dc2626" }}
+          disabled={stopPending}
+          onClick={stopAll}
+        >
+          {stopPending ? "STOP wordt uitgevoerd…" : "STOP · alle relais UIT"}
+        </button>
+      </div>
+      {manualActive && <p className="cardMeta" style={{ marginTop: 10 }}>Bij beëindigen wordt één STOP-opdracht gestuurd waarmee de Pico R1–R8 direct tegelijk naar relais UIT zet.</p>}
+      <p className="cardMeta" style={{ marginTop: 10 }}>STOP is een softwarematige stopfunctie en is in iedere controller-modus beschikbaar.</p>
     </div>
 
     <p className="cardMeta">Laatste outputsynchronisatie {formatDateTime(state.updated_at)} · automatische statuscontrole iedere 2 seconden</p>
@@ -192,8 +223,8 @@ export default function OutputPanel({ initialState, initialMode }: { initialStat
     <div className="grid" style={{ marginTop: 20 }}>
       {outputs.map((output) => {
         const relayActive = state[output.key];
-        const switching = pending[output.id] !== undefined;
-        const displayState = switching ? "SCHAKELEN…" : physicalState(output, relayActive);
+        const switching = pending[output.id] !== undefined || stopPending;
+        const displayState = switching && relayActive ? "SCHAKELEN…" : physicalState(output, relayActive);
         const isPump = output.type === "Pomp";
         const mainStateStyle = !switching && relayActive
           ? { color: isPump ? "#16a34a" : "#dc2626" }
