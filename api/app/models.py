@@ -11,12 +11,8 @@ class Device(Base):
 
     device_id: Mapped[str] = mapped_column(String(100), primary_key=True)
     firmware_version: Mapped[str] = mapped_column(String(50), nullable=False)
-    first_seen: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    last_seen: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     uptime_seconds: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     wifi_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
@@ -24,27 +20,18 @@ class Device(Base):
 class DeviceConfig(Base):
     __tablename__ = "device_config"
 
-    device_id: Mapped[str] = mapped_column(
-        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True
-    )
+    device_id: Mapped[str] = mapped_column(String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True)
     flow_f1_pulses_per_liter: Mapped[float] = mapped_column(Float, nullable=False, default=420.0)
     flow_f2_pulses_per_liter: Mapped[float] = mapped_column(Float, nullable=False, default=420.0)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Telemetry(Base):
     __tablename__ = "telemetry"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    device_id: Mapped[str] = mapped_column(
-        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False
-    )
-    recorded_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
+    device_id: Mapped[str] = mapped_column(String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     pool_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     temperature_t1_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     temperature_t2_c: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -59,9 +46,7 @@ class Telemetry(Base):
 class OutputState(Base):
     __tablename__ = "output_state"
 
-    device_id: Mapped[str] = mapped_column(
-        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True
-    )
+    device_id: Mapped[str] = mapped_column(String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True)
     r1: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     r2: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     r3: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -70,6 +55,14 @@ class OutputState(Base):
     r6: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     r7: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     r8: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OutputCommand(Base):
+    __tablename__ = "output_commands"
+
+    device_id: Mapped[str] = mapped_column(String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True)
+    output_id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
