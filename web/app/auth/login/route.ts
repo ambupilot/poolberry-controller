@@ -9,7 +9,7 @@ import {
 export const runtime = "nodejs";
 
 function verifyPassword(password: string, storedHash: string): boolean {
-  const parts = storedHash.split("$");
+  const parts = storedHash.split(":");
   if (parts.length !== 3 || parts[0] !== "scrypt") return false;
 
   const salt = Buffer.from(parts[1], "hex");
