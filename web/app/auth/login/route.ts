@@ -5,6 +5,7 @@ import {
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
 } from "../../../auth/session";
+import { publicUrl } from "../../../auth/origin";
 
 export const runtime = "nodejs";
 
@@ -37,21 +38,21 @@ export async function POST(request: NextRequest) {
   const sessionSecret = process.env.POOLBERRY_AUTH_SESSION_SECRET;
 
   if (!configuredUsername || !configuredPasswordHash || !sessionSecret) {
-    return NextResponse.redirect(new URL("/login?error=config", request.url), 303);
+    return NextResponse.redirect(publicUrl("/login?error=config"), 303);
   }
 
   const usernameMatches = username === configuredUsername;
   const passwordMatches = verifyPassword(password, configuredPasswordHash);
 
   if (!usernameMatches || !passwordMatches) {
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = publicUrl("/login");
     loginUrl.searchParams.set("error", "credentials");
     if (nextPath !== "/") loginUrl.searchParams.set("next", nextPath);
     return NextResponse.redirect(loginUrl, 303);
   }
 
   const token = await createSessionToken(configuredUsername, sessionSecret);
-  const response = NextResponse.redirect(new URL(nextPath, request.url), 303);
+  const response = NextResponse.redirect(publicUrl(nextPath), 303);
   response.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: token,
