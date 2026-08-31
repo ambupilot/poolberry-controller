@@ -32,12 +32,18 @@ class DeviceConfigResponse(BaseModel):
     device_id: str
     flow_f1_pulses_per_liter: float
     flow_f2_pulses_per_liter: float
+    filter_flow_safety_bypass: bool
+    filter_min_flow_lph: float
+    filter_flow_grace_seconds: int
     updated_at: datetime
 
 
 class DeviceConfigUpdate(BaseModel):
     flow_f1_pulses_per_liter: float = Field(gt=0, le=100000)
     flow_f2_pulses_per_liter: float = Field(gt=0, le=100000)
+    filter_flow_safety_bypass: bool = True
+    filter_min_flow_lph: float = Field(default=500.0, ge=0, le=100000)
+    filter_flow_grace_seconds: int = Field(default=10, ge=1, le=120)
 
 
 class TelemetryRequest(BaseModel):
@@ -99,4 +105,12 @@ class ControllerModeUpdate(BaseModel):
 class ControllerModeResponse(BaseModel):
     device_id: str
     mode: str
+    updated_at: datetime
+
+
+class OperationCommandResponse(BaseModel):
+    device_id: str
+    command: str
+    pending: bool
+    detail: str
     updated_at: datetime
