@@ -22,6 +22,7 @@ CONFIG_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/confi
 OUTPUT_STATE_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/output-state"
 COMMAND_URL = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/commands/next"
 COMMAND_POLL_INTERVAL_SECONDS = 2
+FILTERPUMP_SHUTDOWN_DELAY_SECONDS = 5
 
 ONEWIRE_GPIO = 18
 FLOW_F1_GPIO = 17
@@ -32,7 +33,14 @@ temperature_bus = ds18x20.DS18X20(onewire_bus)
 SENSOR_BY_DEVICE_ID = {definition["device_id"].lower(): sensor_name for sensor_name, definition in SENSORS.items()}
 flow_f1_pulses = 0
 flow_f2_pulses = 0
-flow_config = {"flow_f1_pulses_per_liter": 420.0, "flow_f2_pulses_per_liter": 420.0}
+flow_config = {
+    "flow_f1_pulses_per_liter": 420.0,
+    "flow_f2_pulses_per_liter": 420.0,
+    "filter_flow_safety_bypass": True,
+    "filter_min_flow_lph": 500.0,
+    "filter_flow_grace_seconds": 10,
+}
+filter_operation_started_ms = None
 
 
 def count_f1(pin):
@@ -87,10 +95,16 @@ def refresh_config(wlan):
     try:
         response = requests.get(CONFIG_URL, headers=auth_headers(), timeout=10)
         if response.status_code != 200: print("Config failed: HTTP", response.status_code); return False
-        data = ujson.loads(response.text); f1 = float(data.get("flow_f1_pulses_per_liter", 0)); f2 = float(data.get("flow_f2_pulses_per_liter", 0))
+        data = ujson.loads(response.text)
+        f1 = float(data.get("flow_f1_pulses_per_liter", 0)); f2 = float(data.get("flow_f2_pulses_per_liter", 0))
         if f1 <= 0 or f2 <= 0: print("Config rejected: invalid flow calibration"); return False
-        flow_config["flow_f1_pulses_per_liter"] = f1; flow_config["flow_f2_pulses_per_liter"] = f2
-        print("Config OK: F1", f1, "p/L, F2", f2, "p/L"); return True
+        flow_config["flow_f1_pulses_per_liter"] = f1
+        flow_config["flow_f2_pulses_per_liter"] = f2
+        flow_config["filter_flow_safety_bypass"] = bool(data.get("filter_flow_safety_bypass", True))
+        flow_config["filter_min_flow_lph"] = float(data.get("filter_min_flow_lph", 500.0))
+        flow_config["filter_flow_grace_seconds"] = int(data.get("filter_flow_grace_seconds", 10))
+        print("Config OK: F1", f1, "p/L, F2", f2, "p/L, flow bypass", flow_config["filter_flow_safety_bypass"])
+        return True
     except Exception as exc: print("Config error:", exc); return False
     finally:
         if response is not None:
@@ -98,7 +112,40 @@ def refresh_config(wlan):
             except Exception: pass
 
 
+def acknowledge_command(command_id):
+    ack_url = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/commands/" + command_id + "/ack"
+    return post_json(ack_url, {})
+
+
+def execute_filterpump_on(wlan):
+    global filter_operation_started_ms
+    # Defensive local route check: R4/R8 are NO valves and must be relay-OFF/open.
+    states = output_states(output_pins)
+    if states["r4"] or states["r8"]:
+        print("FILTERPUMP_ON rejected locally: pool route is not open")
+        return False
+    set_output(output_pins, "R1", True)
+    filter_operation_started_ms = time.ticks_ms()
+    print("FILTERPUMP_ON: R1 ON")
+    return send_output_state(wlan)
+
+
+def execute_filterpump_off(wlan):
+    global filter_operation_started_ms
+    print("FILTERPUMP_OFF: heat pump and hydraulic outputs to fail-safe")
+    # Keep R1 running briefly while every dependent output returns to fail-safe.
+    for output_id in ("R2", "R3", "R4", "R5", "R6", "R7", "R8"):
+        set_output(output_pins, output_id, False)
+    if not send_output_state(wlan): return False
+    time.sleep(FILTERPUMP_SHUTDOWN_DELAY_SECONDS)
+    set_output(output_pins, "R1", False)
+    filter_operation_started_ms = None
+    print("FILTERPUMP_OFF: R1 OFF after", FILTERPUMP_SHUTDOWN_DELAY_SECONDS, "s shutdown delay")
+    return send_output_state(wlan)
+
+
 def poll_command(wlan):
+    global filter_operation_started_ms
     if not wlan.isconnected(): return False
     response = None
     try:
@@ -106,24 +153,33 @@ def poll_command(wlan):
         if response.status_code != 200: print("Command poll failed: HTTP", response.status_code); return False
         data = ujson.loads(response.text)
         if data is None: return True
-        output_id = str(data.get("output_id", "")).upper(); enabled = data.get("enabled")
+        command_id = str(data.get("output_id", "")).upper(); enabled = data.get("enabled")
 
-        if output_id == "STOP":
+        if command_id == "STOP":
             print("Command: STOP - all outputs OFF")
-            all_outputs_off(output_pins)
+            all_outputs_off(output_pins); filter_operation_started_ms = None
             if not send_output_state(wlan): return False
-            ack_url = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/commands/STOP/ack"
-            if not post_json(ack_url, {}): return False
-            print("Command acknowledged: STOP")
-            return True
+            if not acknowledge_command("STOP"): return False
+            print("Command acknowledged: STOP"); return True
 
-        if output_id not in OUTPUTS or not isinstance(enabled, bool): print("Command rejected:", data); return False
-        print("Command:", output_id, "ON" if enabled else "OFF")
-        set_output(output_pins, output_id, enabled)
+        if command_id == "FILTERPUMP_ON":
+            if not execute_filterpump_on(wlan): return False
+            if not acknowledge_command(command_id): return False
+            print("Command acknowledged:", command_id); return True
+
+        if command_id == "FILTERPUMP_OFF":
+            if not execute_filterpump_off(wlan): return False
+            if not acknowledge_command(command_id): return False
+            print("Command acknowledged:", command_id); return True
+
+        if command_id not in OUTPUTS or not isinstance(enabled, bool): print("Command rejected:", data); return False
+        print("Command:", command_id, "ON" if enabled else "OFF")
+        set_output(output_pins, command_id, enabled)
+        # Direct MANUAL R1 control intentionally does not enable operational flow safety.
+        if command_id == "R1": filter_operation_started_ms = None
         if not send_output_state(wlan): return False
-        ack_url = API_BASE_URL.rstrip("/") + "/api/v1/devices/" + DEVICE_ID + "/commands/" + output_id + "/ack"
-        if not post_json(ack_url, {}): return False
-        print("Command acknowledged:", output_id); return True
+        if not acknowledge_command(command_id): return False
+        print("Command acknowledged:", command_id); return True
     except Exception as exc: print("Command error:", exc); return False
     finally:
         if response is not None:
@@ -157,6 +213,23 @@ def read_and_reset_flow(elapsed_seconds):
     return f1_lph, f2_lph
 
 
+def enforce_filter_flow_safety(wlan, f1_lph, f2_lph):
+    global filter_operation_started_ms
+    if filter_operation_started_ms is None: return True
+    if flow_config["filter_flow_safety_bypass"]: return True
+    if not output_states(output_pins)["r1"]:
+        filter_operation_started_ms = None
+        return True
+    running_seconds = time.ticks_diff(time.ticks_ms(), filter_operation_started_ms) / 1000.0
+    if running_seconds < flow_config["filter_flow_grace_seconds"]: return True
+    total_flow = f1_lph + f2_lph
+    if total_flow >= flow_config["filter_min_flow_lph"]: return True
+    print("FLOW SAFETY STOP: total flow", round(total_flow, 1), "L/h below", flow_config["filter_min_flow_lph"], "L/h")
+    all_outputs_off(output_pins)
+    filter_operation_started_ms = None
+    return send_output_state(wlan)
+
+
 def send_heartbeat(wlan, uptime_seconds):
     if not wlan.isconnected(): return False
     ok = post_json(HEARTBEAT_URL, {"firmware_version": FIRMWARE_VERSION, "uptime": uptime_seconds, "wifi_connected": True})
@@ -177,6 +250,7 @@ def send_telemetry(wlan, elapsed_seconds):
     for sensor_name, value in readings.items(): payload["temperature_" + sensor_name.lower() + "_c"] = value
     ok = post_json(TELEMETRY_URL, payload)
     if ok: print("Telemetry OK")
+    if not enforce_filter_flow_safety(wlan, f1_lph, f2_lph): return False
     return ok
 
 
