@@ -4,11 +4,18 @@ import { useEffect, useRef, useState } from "react";
 
 type OutputKey = "r1" | "r2" | "r3" | "r4" | "r5" | "r6" | "r7" | "r8";
 type OutputId = "R1" | "R2" | "R3" | "R4" | "R5" | "R6" | "R7" | "R8";
+type ControllerModeName = "NORMAL" | "MANUAL";
 
 type OutputState = {
   device_id: string;
   r1: boolean; r2: boolean; r3: boolean; r4: boolean;
   r5: boolean; r6: boolean; r7: boolean; r8: boolean;
+  updated_at: string;
+};
+
+type ControllerMode = {
+  device_id: string;
+  mode: ControllerModeName;
   updated_at: string;
 };
 
@@ -48,9 +55,11 @@ function actionLabel(output: OutputDefinition, relayActive: boolean) {
   return `${output.id} ${relayActive ? "vrijgeven" : "bekrachtigen"}`;
 }
 
-export default function OutputPanel({ initialState }: { initialState: OutputState }) {
+export default function OutputPanel({ initialState, initialMode }: { initialState: OutputState; initialMode: ControllerMode }) {
   const [state, setState] = useState(initialState);
+  const [mode, setMode] = useState(initialMode);
   const [pending, setPending] = useState<Partial<Record<OutputId, boolean>>>({});
+  const [modePending, setModePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingSince = useRef<Partial<Record<OutputId, number>>>({});
 
@@ -59,11 +68,16 @@ export default function OutputPanel({ initialState }: { initialState: OutputStat
 
     async function refresh() {
       try {
-        const response = await fetch("/browser-api/output-state", { cache: "no-store" });
-        if (!response.ok) throw new Error("status");
-        const next = (await response.json()) as OutputState;
+        const [stateResponse, modeResponse] = await Promise.all([
+          fetch("/browser-api/output-state", { cache: "no-store" }),
+          fetch("/browser-api/mode", { cache: "no-store" }),
+        ]);
+        if (!stateResponse.ok || !modeResponse.ok) throw new Error("status");
+        const nextState = (await stateResponse.json()) as OutputState;
+        const nextMode = (await modeResponse.json()) as ControllerMode;
         if (cancelled) return;
-        setState(next);
+        setState(nextState);
+        setMode(nextMode);
         setError(null);
 
         setPending((current) => {
@@ -71,7 +85,7 @@ export default function OutputPanel({ initialState }: { initialState: OutputStat
           for (const output of outputs) {
             const target = current[output.id];
             if (target === undefined) continue;
-            if (next[output.key] === target) {
+            if (nextState[output.key] === target) {
               delete updated[output.id];
               delete pendingSince.current[output.id];
             } else {
@@ -86,7 +100,7 @@ export default function OutputPanel({ initialState }: { initialState: OutputStat
           return updated;
         });
       } catch {
-        if (!cancelled) setError("Actuele outputstatus kon niet worden opgehaald.");
+        if (!cancelled) setError("Actuele outputstatus of controller-modus kon niet worden opgehaald.");
       }
     }
 
@@ -94,7 +108,35 @@ export default function OutputPanel({ initialState }: { initialState: OutputStat
     return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
 
+  async function changeMode(target: ControllerModeName) {
+    setModePending(true);
+    setError(null);
+    try {
+      const response = await fetch("/browser-api/mode", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: target }),
+      });
+      if (!response.ok) throw new Error("mode");
+      const next = (await response.json()) as ControllerMode;
+      setMode(next);
+      if (target === "NORMAL") {
+        setPending({});
+        pendingSince.current = {};
+      }
+    } catch {
+      setError(`Controller kon niet naar ${target} worden gezet.`);
+    } finally {
+      setModePending(false);
+    }
+  }
+
   async function commandOutput(output: OutputDefinition, enabled: boolean) {
+    if (mode.mode !== "MANUAL") {
+      setError("Directe relaisbediening is alleen toegestaan wanneer MANUAL actief is.");
+      return;
+    }
+
     setPending((current) => ({ ...current, [output.id]: enabled }));
     pendingSince.current[output.id] = Date.now();
     setError(null);
@@ -117,9 +159,34 @@ export default function OutputPanel({ initialState }: { initialState: OutputStat
     }
   }
 
+  const manualActive = mode.mode === "MANUAL";
+
   return <>
-    <p className="cardMeta">Laatste synchronisatie {formatDateTime(state.updated_at)} · automatische statuscontrole iedere 2 seconden</p>
-    <p className="cardMeta">Relais LOW = UIT, HIGH = AAN. Bij kleppen wordt daarnaast de hydraulische OPEN/GESLOTEN-stand afgeleid uit het NO/NC-type.</p>
+    <div className="card" style={{ marginTop: 16, marginBottom: 20 }}>
+      <div className="cardLabel">Controller-modus</div>
+      <div className="cardValue" style={{ color: manualActive ? "#dc2626" : undefined }}>
+        {manualActive ? "MANUAL ACTIEF" : "NORMAL"}
+      </div>
+      <div className="cardMeta">Gewijzigd {formatDateTime(mode.updated_at)}</div>
+      <div className="cardMeta" style={{ marginTop: 8 }}>
+        {manualActive
+          ? "Automatische/operationele besturing is geblokkeerd. R1–R8 kunnen rechtstreeks worden geschakeld."
+          : "Directe relaisbediening is vergrendeld."}
+      </div>
+      <button
+        type="button"
+        className="primaryButton"
+        style={{ marginTop: 16 }}
+        disabled={modePending}
+        onClick={() => changeMode(manualActive ? "NORMAL" : "MANUAL")}
+      >
+        {modePending ? "Modus wijzigen…" : manualActive ? "MANUAL beëindigen" : "MANUAL inschakelen"}
+      </button>
+      {manualActive && <p className="cardMeta" style={{ marginTop: 10 }}>Bij beëindigen worden R1–R8 naar relais UIT gestuurd.</p>}
+    </div>
+
+    <p className="cardMeta">Laatste outputsynchronisatie {formatDateTime(state.updated_at)} · automatische statuscontrole iedere 2 seconden</p>
+    <p className="cardMeta">Relais LOW = UIT, HIGH = AAN. Bij kleppen wordt de hydraulische OPEN/GESLOTEN-stand afgeleid uit het NO/NC-type.</p>
     {error && <div className="panel warning" style={{ marginTop: 16 }}><p>{error}</p></div>}
 
     <div className="grid" style={{ marginTop: 20 }}>
@@ -141,10 +208,10 @@ export default function OutputPanel({ initialState }: { initialState: OutputStat
             type="button"
             className="primaryButton"
             style={{ marginTop: 16 }}
-            disabled={switching}
+            disabled={!manualActive || switching || modePending}
             onClick={() => commandOutput(output, !relayActive)}
           >
-            {switching ? "Wachten op controller…" : actionLabel(output, relayActive)}
+            {!manualActive ? "MANUAL vereist" : switching ? "Wachten op controller…" : actionLabel(output, relayActive)}
           </button>
         </article>;
       })}
