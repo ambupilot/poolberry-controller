@@ -8,15 +8,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Device, DeviceConfig, OutputCommand, OutputState, Telemetry
+from .models import ControllerMode, Device, DeviceConfig, OutputCommand, OutputState, Telemetry
 from .schemas import (
+    ControllerModeResponse, ControllerModeUpdate,
     DeviceConfigResponse, DeviceConfigUpdate, DeviceStatusResponse,
     HeartbeatRequest, HeartbeatResponse, OutputCommandRequest,
     OutputCommandResponse, OutputStateRequest, OutputStateResponse,
     TelemetryRequest, TelemetryResponse,
 )
 
-app = FastAPI(title="PoolBerry API", version="0.8.0")
+app = FastAPI(title="PoolBerry API", version="0.9.0")
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
 DEVICE_OFFLINE_AFTER_SECONDS = int(os.environ.get("DEVICE_OFFLINE_AFTER_SECONDS", "30"))
@@ -59,6 +60,14 @@ def get_or_create_config(db: Session, device_id: str) -> DeviceConfig:
     return config
 
 
+def get_or_create_mode(db: Session, device_id: str) -> ControllerMode:
+    mode = db.get(ControllerMode, device_id)
+    if mode is None:
+        mode = ControllerMode(device_id=device_id, mode="NORMAL")
+        db.add(mode); db.commit(); db.refresh(mode)
+    return mode
+
+
 def config_response(config: DeviceConfig) -> DeviceConfigResponse:
     return DeviceConfigResponse(device_id=config.device_id, flow_f1_pulses_per_liter=config.flow_f1_pulses_per_liter, flow_f2_pulses_per_liter=config.flow_f2_pulses_per_liter, updated_at=config.updated_at)
 
@@ -73,6 +82,22 @@ def output_state_response(state: OutputState) -> OutputStateResponse:
 
 def command_response(command: OutputCommand) -> OutputCommandResponse:
     return OutputCommandResponse(device_id=command.device_id, output_id=command.output_id, enabled=command.enabled, pending=command.pending, updated_at=command.updated_at)
+
+
+def mode_response(mode: ControllerMode) -> ControllerModeResponse:
+    return ControllerModeResponse(device_id=mode.device_id, mode=mode.mode, updated_at=mode.updated_at)
+
+
+def set_command(db: Session, device_id: str, output_id: str, enabled: bool, now: datetime) -> OutputCommand:
+    command = db.get(OutputCommand, (device_id, output_id))
+    if command is None:
+        command = OutputCommand(device_id=device_id, output_id=output_id, enabled=enabled, pending=True, updated_at=now)
+        db.add(command)
+    else:
+        command.enabled = enabled
+        command.pending = True
+        command.updated_at = now
+    return command
 
 
 @app.get("/health")
@@ -124,17 +149,41 @@ def get_output_state(device_id: str, db: Session = Depends(get_db)):
     return output_state_response(state)
 
 
+@app.get("/internal/v1/devices/{device_id}/mode", response_model=ControllerModeResponse)
+def get_controller_mode(device_id: str, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    return mode_response(get_or_create_mode(db, device_id))
+
+
+@app.put("/internal/v1/devices/{device_id}/mode", response_model=ControllerModeResponse)
+def update_controller_mode(device_id: str, payload: ControllerModeUpdate, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    mode = get_or_create_mode(db, device_id)
+    now = datetime.now(timezone.utc)
+    target = payload.mode.upper()
+
+    if target == "MANUAL":
+        for command in db.scalars(select(OutputCommand).where(OutputCommand.device_id == device_id, OutputCommand.pending.is_(True))).all():
+            command.pending = False
+            command.updated_at = now
+    elif target == "NORMAL":
+        for output_id in sorted(SUPPORTED_OUTPUTS):
+            set_command(db, device_id, output_id, False, now)
+
+    mode.mode = target
+    mode.updated_at = now
+    db.commit(); db.refresh(mode)
+    return mode_response(mode)
+
+
 @app.put("/internal/v1/devices/{device_id}/outputs/{output_id}/command", response_model=OutputCommandResponse)
 def set_output_command(device_id: str, output_id: str, payload: OutputCommandRequest, db: Session = Depends(get_db)):
     if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    if get_or_create_mode(db, device_id).mode != "MANUAL":
+        raise HTTPException(status_code=409, detail="Direct output commands require MANUAL mode")
     output_id = normalize_output_id(output_id)
     now = datetime.now(timezone.utc)
-    command = db.get(OutputCommand, (device_id, output_id))
-    if command is None:
-        command = OutputCommand(device_id=device_id, output_id=output_id, enabled=payload.enabled, pending=True, updated_at=now)
-        db.add(command)
-    else:
-        command.enabled = payload.enabled; command.pending = True; command.updated_at = now
+    command = set_command(db, device_id, output_id, payload.enabled, now)
     db.commit(); db.refresh(command)
     return command_response(command)
 
