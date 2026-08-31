@@ -12,17 +12,17 @@ from .models import ControllerMode, Device, DeviceConfig, OutputCommand, OutputS
 from .schemas import (
     ControllerModeResponse, ControllerModeUpdate,
     DeviceConfigResponse, DeviceConfigUpdate, DeviceStatusResponse,
-    HeartbeatRequest, HeartbeatResponse, OutputCommandRequest,
-    OutputCommandResponse, OutputStateRequest, OutputStateResponse,
+    HeartbeatRequest, HeartbeatResponse, OperationCommandResponse,
+    OutputCommandRequest, OutputCommandResponse, OutputStateRequest, OutputStateResponse,
     TelemetryRequest, TelemetryResponse,
 )
 
-app = FastAPI(title="PoolBerry API", version="0.10.0")
+app = FastAPI(title="PoolBerry API", version="0.11.0")
 DEVICE_ID = os.environ.get("POOLBERRY_DEVICE_ID", "")
 DEVICE_TOKEN_SHA256 = os.environ.get("POOLBERRY_DEVICE_TOKEN_SHA256", "").lower()
 DEVICE_OFFLINE_AFTER_SECONDS = int(os.environ.get("DEVICE_OFFLINE_AFTER_SECONDS", "30"))
 SUPPORTED_OUTPUTS = {f"R{index}" for index in range(1, 9)}
-SUPPORTED_COMMANDS = SUPPORTED_OUTPUTS | {"STOP"}
+SUPPORTED_COMMANDS = SUPPORTED_OUTPUTS | {"STOP", "FILTERPUMP_ON", "FILTERPUMP_OFF"}
 
 
 def authorize_device(device_id: str, authorization: str | None) -> None:
@@ -77,7 +77,15 @@ def get_or_create_mode(db: Session, device_id: str) -> ControllerMode:
 
 
 def config_response(config: DeviceConfig) -> DeviceConfigResponse:
-    return DeviceConfigResponse(device_id=config.device_id, flow_f1_pulses_per_liter=config.flow_f1_pulses_per_liter, flow_f2_pulses_per_liter=config.flow_f2_pulses_per_liter, updated_at=config.updated_at)
+    return DeviceConfigResponse(
+        device_id=config.device_id,
+        flow_f1_pulses_per_liter=config.flow_f1_pulses_per_liter,
+        flow_f2_pulses_per_liter=config.flow_f2_pulses_per_liter,
+        filter_flow_safety_bypass=config.filter_flow_safety_bypass,
+        filter_min_flow_lph=config.filter_min_flow_lph,
+        filter_flow_grace_seconds=config.filter_flow_grace_seconds,
+        updated_at=config.updated_at,
+    )
 
 
 def telemetry_response(t: Telemetry) -> TelemetryResponse:
@@ -96,10 +104,10 @@ def mode_response(mode: ControllerMode) -> ControllerModeResponse:
     return ControllerModeResponse(device_id=mode.device_id, mode=mode.mode, updated_at=mode.updated_at)
 
 
-def set_command(db: Session, device_id: str, output_id: str, enabled: bool, now: datetime) -> OutputCommand:
-    command = db.get(OutputCommand, (device_id, output_id))
+def set_command(db: Session, device_id: str, command_id: str, enabled: bool, now: datetime) -> OutputCommand:
+    command = db.get(OutputCommand, (device_id, command_id))
     if command is None:
-        command = OutputCommand(device_id=device_id, output_id=output_id, enabled=enabled, pending=True, updated_at=now)
+        command = OutputCommand(device_id=device_id, output_id=command_id, enabled=enabled, pending=True, updated_at=now)
         db.add(command)
     else:
         command.enabled = enabled
@@ -108,12 +116,20 @@ def set_command(db: Session, device_id: str, output_id: str, enabled: bool, now:
     return command
 
 
-def queue_stop(db: Session, device_id: str, now: datetime) -> OutputCommand:
-    # STOP supersedes all pending actuator work. The Pico executes this one command atomically.
+def clear_pending(db: Session, device_id: str, now: datetime) -> None:
     for command in db.scalars(select(OutputCommand).where(OutputCommand.device_id == device_id, OutputCommand.pending.is_(True))).all():
         command.pending = False
         command.updated_at = now
+
+
+def queue_stop(db: Session, device_id: str, now: datetime) -> OutputCommand:
+    clear_pending(db, device_id, now)
     return set_command(db, device_id, "STOP", False, now)
+
+
+def queue_operation(db: Session, device_id: str, command_id: str, now: datetime) -> OutputCommand:
+    clear_pending(db, device_id, now)
+    return set_command(db, device_id, command_id, True, now)
 
 
 @app.get("/health")
@@ -139,6 +155,9 @@ def update_internal_config(device_id: str, payload: DeviceConfigUpdate, db: Sess
     config = get_or_create_config(db, device_id)
     config.flow_f1_pulses_per_liter = payload.flow_f1_pulses_per_liter
     config.flow_f2_pulses_per_liter = payload.flow_f2_pulses_per_liter
+    config.filter_flow_safety_bypass = payload.filter_flow_safety_bypass
+    config.filter_min_flow_lph = payload.filter_min_flow_lph
+    config.filter_flow_grace_seconds = payload.filter_flow_grace_seconds
     config.updated_at = datetime.now(timezone.utc)
     db.commit(); db.refresh(config)
     return config_response(config)
@@ -177,14 +196,10 @@ def update_controller_mode(device_id: str, payload: ControllerModeUpdate, db: Se
     mode = get_or_create_mode(db, device_id)
     now = datetime.now(timezone.utc)
     target = payload.mode.upper()
-
     if target == "MANUAL":
-        for command in db.scalars(select(OutputCommand).where(OutputCommand.device_id == device_id, OutputCommand.pending.is_(True))).all():
-            command.pending = False
-            command.updated_at = now
+        clear_pending(db, device_id, now)
     elif target == "NORMAL":
         queue_stop(db, device_id, now)
-
     mode.mode = target
     mode.updated_at = now
     db.commit(); db.refresh(mode)
@@ -198,6 +213,34 @@ def stop_all_outputs(device_id: str, db: Session = Depends(get_db)):
     command = queue_stop(db, device_id, now)
     db.commit(); db.refresh(command)
     return command_response(command)
+
+
+@app.post("/internal/v1/devices/{device_id}/operations/filterpump/on", response_model=OperationCommandResponse)
+def filterpump_on(device_id: str, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    if get_or_create_mode(db, device_id).mode != "NORMAL":
+        raise HTTPException(status_code=409, detail="FILTERPOMP AAN is alleen toegestaan in NORMAL mode")
+    state = db.get(OutputState, device_id)
+    if state is None: raise HTTPException(status_code=409, detail="Geen actuele outputstatus beschikbaar")
+    if state.r4:
+        raise HTTPException(status_code=409, detail="FILTERPOMP AAN geblokkeerd: R4 aanvoer VAN zwembad is gesloten")
+    if state.r8:
+        raise HTTPException(status_code=409, detail="FILTERPOMP AAN geblokkeerd: R8 aanvoer NAAR zwembad is gesloten")
+    now = datetime.now(timezone.utc)
+    command = queue_operation(db, device_id, "FILTERPUMP_ON", now)
+    db.commit(); db.refresh(command)
+    return OperationCommandResponse(device_id=device_id, command="FILTERPUMP_ON", pending=True, detail="Normale zwembadroute geldig; filterpomp-startopdracht aangeboden", updated_at=command.updated_at)
+
+
+@app.post("/internal/v1/devices/{device_id}/operations/filterpump/off", response_model=OperationCommandResponse)
+def filterpump_off(device_id: str, db: Session = Depends(get_db)):
+    if db.get(Device, device_id) is None: raise HTTPException(status_code=404, detail="Device not found")
+    if get_or_create_mode(db, device_id).mode != "NORMAL":
+        raise HTTPException(status_code=409, detail="FILTERPOMP UIT is alleen toegestaan in NORMAL mode; gebruik STOP in MANUAL")
+    now = datetime.now(timezone.utc)
+    command = queue_operation(db, device_id, "FILTERPUMP_OFF", now)
+    db.commit(); db.refresh(command)
+    return OperationCommandResponse(device_id=device_id, command="FILTERPUMP_OFF", pending=True, detail="Installatie wordt lokaal door de controller naar fail-safe teruggebracht", updated_at=command.updated_at)
 
 
 @app.put("/internal/v1/devices/{device_id}/outputs/{output_id}/command", response_model=OutputCommandResponse)
