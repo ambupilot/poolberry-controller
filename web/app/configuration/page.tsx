@@ -55,6 +55,9 @@ export default async function ConfigurationPage() {
           <p className="eyebrow">PoolBerry Control</p>
           <h1>Configuratie</h1>
         </div>
+        <div className="topbarActions">
+          <form method="post" action="/auth/logout"><button type="submit" className="logoutButton">Uitloggen</button></form>
+        </div>
       </header>
 
       <nav className="tabs" aria-label="PoolBerry secties">
