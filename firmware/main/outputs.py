@@ -1,9 +1,9 @@
 from machine import Pin
 
 # PoolBerry main-controller output bank.
-# Logical ON is currently mapped to GPIO HIGH, matching the tested LED/input
-# behavior of the relay modules. Confirm the physical COM/NO relay contact
-# behavior before connecting pumps or actuators.
+# Physical relay behavior has been verified:
+# GPIO LOW  -> COM/NO open   -> relay OFF
+# GPIO HIGH -> COM/NO closed -> relay ON
 OUTPUT_ON_LEVEL = 1
 OUTPUT_OFF_LEVEL = 0
 
@@ -27,8 +27,15 @@ def initialise_outputs():
     return pins
 
 
+def set_output(pins, output_id, enabled):
+    """Set one known output using logical True=ON / False=OFF semantics."""
+    if output_id not in OUTPUTS:
+        raise ValueError("Unknown output: " + str(output_id))
+    pins[output_id].value(OUTPUT_ON_LEVEL if enabled else OUTPUT_OFF_LEVEL)
+
+
 def output_states(pins):
-    """Return logical commanded states, independent of raw GPIO representation."""
+    """Return logical states, independent of raw GPIO representation."""
     return {
         output_id.lower(): pins[output_id].value() == OUTPUT_ON_LEVEL
         for output_id in OUTPUTS
