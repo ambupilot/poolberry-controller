@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE_NAME, verifySessionToken } from "../../../../../../auth/session";
+import { SESSION_COOKIE_NAME, verifySessionToken } from "../../../../../auth/session";
 
 const API_URL = process.env.POOLBERRY_API_INTERNAL_URL ?? "http://api:8000";
 const DEVICE_ID = process.env.POOLBERRY_DEVICE_ID ?? "poolberry-main-001";
