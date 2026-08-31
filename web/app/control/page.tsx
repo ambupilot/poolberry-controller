@@ -84,7 +84,7 @@ export default function ControlPage() {
         <h2>STOP</h2>
         <p>STOP schakelt alle acht relais via het bestaande centrale STOP-command uit. Deze functie blijft onafhankelijk van de normale operationele opdrachten beschikbaar.</p>
         <p className="cardMeta">De STOP-knop wordt in de volgende stap aangesloten op dezelfde softwarematige STOP-functie die al op Hardware / Manual wordt gebruikt.</p>
-        <button type="button" className="primaryButton" style={{ marginTop: 12 }} disabled>STOP · alle relais UIT</button>
+        <button type="button" disabled style={{ ...controlButtonBase, width: "100%", marginTop: 12, background: "rgba(220, 38, 38, 0.70)" }}>STOP · alle relais UIT</button>
       </section>
     </main>
   );
