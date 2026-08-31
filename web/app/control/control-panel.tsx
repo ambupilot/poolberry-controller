@@ -20,6 +20,12 @@ export default function ControlPanel({ initialState, initialMode }: { initialSta
   const [state, setState] = useState(initialState); const [mode, setMode] = useState(initialMode); const [busy, setBusy] = useState(false); const [message, setMessage] = useState<string | null>(null); const [collectorTransition, setCollectorTransition] = useState<CollectorTransition>(null); const [filterStopping, setFilterStopping] = useState(false);
 
   useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
+  useEffect(() => {
     let cancelled = false;
     async function refresh() {
       try {
@@ -68,8 +74,12 @@ export default function ControlPanel({ initialState, initialMode }: { initialSta
     <section className="panel">
       <h2>Installatie</h2>
       <p className="cardMeta">Controller-modus: {mode.mode}. Operationele pomp- en collectorbediening is actief.</p>
-      {message && <div className="panel warning" style={{ marginTop: 12 }}><p>{message}</p></div>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, marginTop: 16 }}>
+      <div style={{ minHeight: 76, marginTop: 12 }} aria-live="polite">
+        <div className="panel warning" style={{ height: 64, display: "flex", alignItems: "center", overflow: "hidden", visibility: message ? "visible" : "hidden" }}>
+          <p style={{ margin: 0 }}>{message ?? "Status"}</p>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, marginTop: 4 }}>
         {controls.map((control) => { const active = isOn(control.key); const clickable = control.enabled && normal && !busy && !transitionActive; const blinking = control.key === "collector" && collectorTransition === "opening"; return <button key={`${control.key}-on`} type="button" disabled={!clickable} onClick={() => click(control.key, "on")} style={{ ...base, background: `rgba(22, 163, 74, ${active || blinking ? "0.90" : "0.20"})`, cursor: clickable ? "pointer" : "not-allowed", ...(blinking ? blinkStyle : {}) }}><span style={{ display: "block" }}>{control.label}</span><span style={{ display: "block", marginTop: 4 }}>{control.on}</span></button>; })}
         {controls.map((control) => { const active = control.enabled && !isOn(control.key); const clickable = control.enabled && normal && !busy && !transitionActive; const blinking = (control.key === "collector" && collectorTransition === "closing") || (control.key === "filter" && filterStopping); return <button key={`${control.key}-off`} type="button" disabled={!clickable} onClick={() => click(control.key, "off")} style={{ ...base, background: `rgba(220, 38, 38, ${active || blinking ? "0.70" : "0.20"})`, cursor: clickable ? "pointer" : "not-allowed", ...(blinking ? blinkStyle : {}) }}><span style={{ display: "block" }}>{control.label}</span><span style={{ display: "block", marginTop: 4 }}>{control.off}</span></button>; })}
       </div>
