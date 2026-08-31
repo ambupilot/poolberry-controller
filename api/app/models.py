@@ -54,3 +54,22 @@ class Telemetry(Base):
     temperature_t6_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     flow_f1_lph: Mapped[float | None] = mapped_column(Float, nullable=True)
     flow_f2_lph: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class OutputState(Base):
+    __tablename__ = "output_state"
+
+    device_id: Mapped[str] = mapped_column(
+        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), primary_key=True
+    )
+    r1: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    r2: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    r3: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    r4: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    r5: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    r6: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    r7: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    r8: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
