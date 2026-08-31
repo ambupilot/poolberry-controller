@@ -21,9 +21,7 @@ const outputs = [
 ];
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("nl-NL", {
-    dateStyle: "medium", timeStyle: "medium", timeZone: "Europe/Amsterdam",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat("nl-NL", { dateStyle: "medium", timeStyle: "medium", timeZone: "Europe/Amsterdam" }).format(new Date(value));
 }
 
 export default function OutputPanel({ initialState }: { initialState: OutputState }) {
@@ -34,80 +32,50 @@ export default function OutputPanel({ initialState }: { initialState: OutputStat
 
   useEffect(() => {
     let cancelled = false;
-
     async function refresh() {
       try {
-        const response = await fetch("/api/output-state", { cache: "no-store" });
+        const response = await fetch("/browser-api/output-state", { cache: "no-store" });
         if (!response.ok) throw new Error("status");
         const next = (await response.json()) as OutputState;
         if (cancelled) return;
-        setState(next);
-        setError(null);
-        if (pendingR1 !== null && next.r1 === pendingR1) {
-          setPendingR1(null);
-          pendingSince.current = null;
-        } else if (pendingSince.current && Date.now() - pendingSince.current > 10000) {
-          setPendingR1(null);
-          pendingSince.current = null;
-          setError("R1-opdracht is niet binnen 10 seconden bevestigd door de controller.");
+        setState(next); setError(null);
+        if (pendingR1 !== null && next.r1 === pendingR1) { setPendingR1(null); pendingSince.current = null; }
+        else if (pendingSince.current && Date.now() - pendingSince.current > 10000) {
+          setPendingR1(null); pendingSince.current = null; setError("R1-opdracht is niet binnen 10 seconden bevestigd door de controller.");
         }
-      } catch {
-        if (!cancelled) setError("Actuele outputstatus kon niet worden opgehaald.");
-      }
+      } catch { if (!cancelled) setError("Actuele outputstatus kon niet worden opgehaald."); }
     }
-
     const timer = window.setInterval(refresh, 2000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [pendingR1]);
 
   async function commandR1(enabled: boolean) {
-    setPendingR1(enabled);
-    pendingSince.current = Date.now();
-    setError(null);
+    setPendingR1(enabled); pendingSince.current = Date.now(); setError(null);
     try {
-      const response = await fetch("/api/outputs/R1/command", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
+      const response = await fetch("/browser-api/outputs/R1/command", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }),
       });
       if (!response.ok) throw new Error("command");
     } catch {
-      setPendingR1(null);
-      pendingSince.current = null;
-      setError("R1-opdracht kon niet worden verstuurd.");
+      setPendingR1(null); pendingSince.current = null; setError("R1-opdracht kon niet worden verstuurd.");
     }
   }
 
-  return (
-    <>
-      <p className="cardMeta">Laatste synchronisatie {formatDateTime(state.updated_at)} · automatische statuscontrole iedere 2 seconden</p>
-      <p className="cardMeta">LOW = COM/NO open = UIT. HIGH = COM/NO gesloten = AAN. Alleen R1 is in deze testfase op afstand bestuurbaar.</p>
-      {error && <div className="panel warning" style={{ marginTop: 16 }}><p>{error}</p></div>}
-      <div className="grid" style={{ marginTop: 20 }}>
-        {outputs.map((output) => {
-          const active = state[output.key];
-          const isR1 = output.id === "R1";
-          const switching = isR1 && pendingR1 !== null;
-          return (
-            <article className={`card ${active ? "primaryCard" : ""}`} key={output.id}>
-              <div className="cardLabel">{output.id} · {output.gpio}</div>
-              <div className="cardValue">{switching ? "SCHAKELEN…" : active ? "AAN" : "UIT"}</div>
-              <div className="cardMeta">{output.role}</div><div className="cardMeta">{output.type}</div>
-              {isR1 && (
-                <button
-                  type="button"
-                  className="primaryButton"
-                  style={{ marginTop: 16 }}
-                  disabled={switching}
-                  onClick={() => commandR1(!active)}
-                >
-                  {switching ? "Wachten op controller…" : `R1 ${active ? "uitschakelen" : "inschakelen"}`}
-                </button>
-              )}
-            </article>
-          );
-        })}
-      </div>
-    </>
-  );
+  return <>
+    <p className="cardMeta">Laatste synchronisatie {formatDateTime(state.updated_at)} · automatische statuscontrole iedere 2 seconden</p>
+    <p className="cardMeta">LOW = COM/NO open = UIT. HIGH = COM/NO gesloten = AAN. Alleen R1 is in deze testfase op afstand bestuurbaar.</p>
+    {error && <div className="panel warning" style={{ marginTop: 16 }}><p>{error}</p></div>}
+    <div className="grid" style={{ marginTop: 20 }}>
+      {outputs.map((output) => {
+        const active = state[output.key]; const isR1 = output.id === "R1"; const switching = isR1 && pendingR1 !== null;
+        return <article className={`card ${active ? "primaryCard" : ""}`} key={output.id}>
+          <div className="cardLabel">{output.id} · {output.gpio}</div><div className="cardValue">{switching ? "SCHAKELEN…" : active ? "AAN" : "UIT"}</div>
+          <div className="cardMeta">{output.role}</div><div className="cardMeta">{output.type}</div>
+          {isR1 && <button type="button" className="primaryButton" style={{ marginTop: 16 }} disabled={switching} onClick={() => commandR1(!active)}>
+            {switching ? "Wachten op controller…" : `R1 ${active ? "uitschakelen" : "inschakelen"}`}
+          </button>}
+        </article>;
+      })}
+    </div>
+  </>;
 }
