@@ -78,3 +78,15 @@ class OutputStateRequest(BaseModel):
 class OutputStateResponse(OutputStateRequest):
     device_id: str
     updated_at: datetime
+
+
+class OutputCommandRequest(BaseModel):
+    enabled: bool
+
+
+class OutputCommandResponse(BaseModel):
+    device_id: str
+    output_id: str
+    enabled: bool
+    pending: bool
+    updated_at: datetime
