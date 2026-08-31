@@ -79,8 +79,11 @@ export default async function Home() {
     <main className="shell">
       <header className="topbar">
         <div><p className="eyebrow">PoolBerry Control</p><h1>Dashboard</h1></div>
-        <div className={`statusBadge ${device?.status === "online" ? "online" : "offline"}`}>
-          <span className="statusDot" />{device?.status === "online" ? "Online" : "Offline"}
+        <div className="topbarActions">
+          <div className={`statusBadge ${device?.status === "online" ? "online" : "offline"}`}>
+            <span className="statusDot" />{device?.status === "online" ? "Online" : "Offline"}
+          </div>
+          <form method="post" action="/auth/logout"><button type="submit" className="logoutButton">Uitloggen</button></form>
         </div>
       </header>
 
