@@ -1,11 +1,16 @@
 from machine import Pin
 
 # PoolBerry main-controller output bank.
-# Physical relay behavior has been verified:
-# GPIO LOW  -> COM/NO open   -> relay OFF
-# GPIO HIGH -> COM/NO closed -> relay ON
-OUTPUT_ON_LEVEL = 1
-OUTPUT_OFF_LEVEL = 0
+# Physical relay behavior has been verified on the installed relay modules:
+# GPIO LOW  -> relay energised   -> COM/NO closed  -> logical relay ON
+# GPIO HIGH -> relay de-energised -> COM/NO open   -> logical relay OFF
+#
+# The relay inputs are therefore ACTIVE-LOW.
+# Logical semantics throughout the application remain:
+#   True  = relay ON / energised
+#   False = relay OFF / de-energised
+OUTPUT_ON_LEVEL = 0
+OUTPUT_OFF_LEVEL = 1
 
 OUTPUTS = {
     "R1": {"gpio": 8, "role": "FILTERPOMP", "kind": "pump"},
